@@ -9,6 +9,7 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using ElosWin.Models;
+using ElosWin.Models.Enums;
 
 namespace ElosWin.Services.Network;
 
@@ -25,11 +26,17 @@ public class PeerDiscoveryService : IDisposable
 
     public string Username { get; set; } = Environment.MachineName;
     public int MyAudioPort { get; set; } = 5000;
-    public bool IsInCall { get; set; } = false;
+    public UserState CurrentState { get; set; } = UserState.Idle;
+    public bool IsInCall
+    {
+        get => CurrentState != UserState.Idle;
+        set => CurrentState = value ? (CurrentState == UserState.Idle ? UserState.InCall : CurrentState) : UserState.Idle;
+    }
     public bool IsRunning { get; private set; }
 
     public event Action<PeerInfo>? OnPeerJoinedCall;
     public event Action<PeerInfo>? OnPeerLeftCall;
+    public event Action<PeerInfo>? OnPeerStateChanged;
     public event Action<int>? OnCallStateUpdated;
 
     public List<PeerInfo> GetKnownPeersInCall()
@@ -71,8 +78,8 @@ public class PeerDiscoveryService : IDisposable
 
         try
         {
-            string state = IsInCall ? "IN_CALL" : "IDLE";
-            string message = $"ELOS_PING|{_instanceId}|{Username}|{MyAudioPort}|{state}";
+            string stateStr = CurrentState.ToString();
+            string message = $"ELOS_PING|{_instanceId}|{Username}|{MyAudioPort}|{stateStr}";
             byte[] bytes = Encoding.UTF8.GetBytes(message);
 
             var broadcastTargets = GetBroadcastAddresses();
@@ -149,8 +156,8 @@ public class PeerDiscoveryService : IDisposable
         {
             try
             {
-                string state = IsInCall ? "IN_CALL" : "IDLE";
-                string message = $"ELOS_PING|{_instanceId}|{Username}|{MyAudioPort}|{state}";
+                string stateStr = CurrentState.ToString();
+                string message = $"ELOS_PING|{_instanceId}|{Username}|{MyAudioPort}|{stateStr}";
                 byte[] bytes = Encoding.UTF8.GetBytes(message);
 
                 var broadcastTargets = GetBroadcastAddresses();
@@ -203,14 +210,21 @@ public class PeerDiscoveryService : IDisposable
                         if (myIps.Contains(peerIp) && peerAudioPort == MyAudioPort)
                             continue;
 
-                        string state = parts[4];
+                        string rawState = parts[4];
+                        UserState parsedState = rawState switch
+                        {
+                            "IN_CALL" or "InCall" => UserState.InCall,
+                            "SHARING_SCREEN" or "SharingScreen" => UserState.SharingScreen,
+                            _ => UserState.Idle
+                        };
+
                         string peerKey = $"{peerIp}:{peerAudioPort}";
 
                         if (packetType == "ELOS_PING" && _udpClient != null)
                         {
                             try
                             {
-                                string myState = IsInCall ? "IN_CALL" : "IDLE";
+                                string myState = CurrentState.ToString();
                                 string pong = $"ELOS_PONG|{_instanceId}|{Username}|{MyAudioPort}|{myState}";
                                 byte[] pongBytes = Encoding.UTF8.GetBytes(pong);
                                 _ = _udpClient.SendAsync(pongBytes, pongBytes.Length, result.RemoteEndPoint);
@@ -218,31 +232,54 @@ public class PeerDiscoveryService : IDisposable
                             catch { }
                         }
 
-                        if (state == "IN_CALL")
+                        if (parsedState != UserState.Idle)
                         {
-                            var peer = new PeerInfo
-                            {
-                                Username = peerUser,
-                                IpAddress = peerIp,
-                                AudioPort = peerAudioPort,
-                                LastSeen = DateTime.Now
-                            };
-
                             bool isNew = !_activePeers.ContainsKey(peerKey);
-                            _activePeers.AddOrUpdate(peerKey, peer, (k, existing) =>
-                            {
-                                existing.LastSeen = DateTime.Now;
-                                existing.Username = peerUser;
-                                return existing;
-                            });
+                            bool stateChanged = false;
+                            PeerInfo? updatedPeer = null;
+
+                            _activePeers.AddOrUpdate(
+                                peerKey,
+                                _ =>
+                                {
+                                    return new PeerInfo
+                                    {
+                                        Username = peerUser,
+                                        IpAddress = peerIp,
+                                        AudioPort = peerAudioPort,
+                                        LastSeen = DateTime.Now,
+                                        State = parsedState
+                                    };
+                                },
+                                (_, existing) =>
+                                {
+                                    existing.LastSeen = DateTime.Now;
+                                    existing.Username = peerUser;
+                                    if (existing.State != parsedState)
+                                    {
+                                        existing.State = parsedState;
+                                        stateChanged = true;
+                                    }
+                                    updatedPeer = existing;
+                                    return existing;
+                                }
+                            );
 
                             if (isNew)
-                                OnPeerJoinedCall?.Invoke(peer);
+                            {
+                                if (_activePeers.TryGetValue(peerKey, out var createdPeer))
+                                    OnPeerJoinedCall?.Invoke(createdPeer);
+                            }
+                            else if (stateChanged && updatedPeer != null)
+                                OnPeerStateChanged?.Invoke(updatedPeer);
                         }
                         else
                         {
                             if (_activePeers.TryRemove(peerKey, out var removed))
+                            {
+                                removed.State = UserState.Idle;
                                 OnPeerLeftCall?.Invoke(removed);
+                            }
                         }
 
                         OnCallStateUpdated?.Invoke(_activePeers.Count);
@@ -277,7 +314,10 @@ public class PeerDiscoveryService : IDisposable
                 foreach (var key in expired)
                 {
                     if (_activePeers.TryRemove(key, out var expiredPeer))
+                    {
+                        expiredPeer.State = UserState.Idle;
                         OnPeerLeftCall?.Invoke(expiredPeer);
+                    }
                 }
 
                 if (expired.Count > 0)

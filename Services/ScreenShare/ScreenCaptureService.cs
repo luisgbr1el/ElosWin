@@ -1,0 +1,241 @@
+﻿using System;
+using System.Collections.Generic;
+using System.Drawing;
+using System.Drawing.Drawing2D;
+using System.Drawing.Imaging;
+using System.IO;
+using System.Runtime.InteropServices;
+using System.Text;
+using System.Threading;
+using System.Threading.Tasks;
+using ElosWin.Models;
+using NAudio.CoreAudioApi;
+using NAudio.Wave;
+
+namespace ElosWin.Services.ScreenShare;
+
+public class ScreenCaptureService : IDisposable
+{
+    [DllImport("user32.dll")]
+    private static extern bool EnumWindows(EnumWindowsProc enumProc, IntPtr lParam);
+    private delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
+
+    [DllImport("user32.dll")]
+    private static extern int GetWindowText(IntPtr hWnd, StringBuilder lpString, int nMaxCount);
+
+    [DllImport("user32.dll")]
+    private static extern int GetWindowTextLength(IntPtr hWnd);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool IsWindowVisible(IntPtr hWnd);
+
+    [DllImport("user32.dll")]
+    private static extern bool GetWindowRect(IntPtr hWnd, out RECT lpRect);
+
+    [DllImport("user32.dll")]
+    private static extern bool PrintWindow(IntPtr hwnd, IntPtr hdcBlt, uint nFlags);
+
+    [DllImport("user32.dll")]
+    private static extern int GetSystemMetrics(int nIndex);
+
+    private const int SM_CXSCREEN = 0;
+    private const int SM_CYSCREEN = 1;
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct RECT
+    {
+        public int Left, Top, Right, Bottom;
+    }
+
+    private CancellationTokenSource? _captureCts;
+    private WasapiLoopbackCapture? _systemAudioCapture;
+
+    public bool IsCapturing { get; private set; }
+
+    public static List<CaptureTargetItem> GetAvailableCaptureTargets()
+    {
+        var list = new List<CaptureTargetItem>
+        {
+            new CaptureTargetItem
+            {
+                Title = "Tela inteira",
+                Hwnd = IntPtr.Zero,
+                IsFullScreen = true
+            }
+        };
+
+        EnumWindows((hWnd, _) =>
+        {
+            if (!IsWindowVisible(hWnd)) return true;
+
+            int length = GetWindowTextLength(hWnd);
+            if (length == 0) return true;
+
+            var builder = new StringBuilder(length + 1);
+            GetWindowText(hWnd, builder, builder.Capacity);
+            string title = builder.ToString();
+
+            if (!string.IsNullOrWhiteSpace(title) && title != "Elos" && title != "Program Manager")
+            {
+                GetWindowRect(hWnd, out RECT r);
+                if (r.Right - r.Left > 100 && r.Bottom - r.Top > 100)
+                {
+                    list.Add(new CaptureTargetItem
+                    {
+                        Title = title,
+                        Hwnd = hWnd,
+                        IsFullScreen = false
+                    });
+                }
+            }
+            return true;
+        }, IntPtr.Zero);
+
+        return list;
+    }
+
+    public void StartCapture(
+        CaptureTargetItem target,
+        ScreenShareQuality quality,
+        bool captureAudio,
+        Action<byte[]> onVideoChunkReady,
+        Action<byte[], int>? onAudioDataReady)
+    {
+        if (IsCapturing) StopCapture();
+
+        IsCapturing = true;
+        _captureCts = new CancellationTokenSource();
+        var token = _captureCts.Token;
+
+        if (captureAudio && onAudioDataReady != null)
+        {
+            try
+            {
+                _systemAudioCapture = new WasapiLoopbackCapture();
+                _systemAudioCapture.DataAvailable += (s, a) =>
+                {
+                    if (a.BytesRecorded > 0)
+                        onAudioDataReady(a.Buffer, a.BytesRecorded);
+                };
+                _systemAudioCapture.StartRecording();
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[ScreenAudioCapture] Erro: {ex.Message}");
+            }
+        }
+
+        Task.Run(async () =>
+        {
+            var jpgEncoder = GetEncoder(ImageFormat.Jpeg);
+            var encParams = new EncoderParameters(1);
+            encParams.Param[0] = new EncoderParameter(System.Drawing.Imaging.Encoder.Quality, (long)quality.JpegQuality);
+
+            int targetDelay = 1000 / Math.Max(1, quality.Fps);
+
+            while (!token.IsCancellationRequested)
+            {
+                var start = DateTime.UtcNow;
+
+                byte[]? frameData = CaptureTargetToJpeg(target, quality.Width, quality.Height, jpgEncoder, encParams);
+                if (frameData != null && frameData.Length > 0)
+                    onVideoChunkReady(frameData);
+
+                int elapsed = (int)(DateTime.UtcNow - start).TotalMilliseconds;
+                int sleep = Math.Max(1, targetDelay - elapsed);
+                await Task.Delay(sleep, token).ConfigureAwait(false);
+            }
+        }, token);
+    }
+
+    private byte[]? CaptureTargetToJpeg(CaptureTargetItem target, int targetW, int targetH, ImageCodecInfo? encoder, EncoderParameters encParams)
+    {
+        try
+        {
+            Bitmap? capturedBmp = null;
+
+            if (target.IsFullScreen || target.Hwnd == IntPtr.Zero)
+            {
+                int screenW = GetSystemMetrics(SM_CXSCREEN);
+                int screenH = GetSystemMetrics(SM_CYSCREEN);
+                capturedBmp = new Bitmap(screenW, screenH, PixelFormat.Format32bppArgb);
+                using (Graphics g = Graphics.FromImage(capturedBmp))
+                {
+                    g.CopyFromScreen(0, 0, 0, 0, new Size(screenW, screenH), CopyPixelOperation.SourceCopy);
+                }
+            }
+            else
+            {
+                if (!GetWindowRect(target.Hwnd, out RECT rect)) return null;
+                int w = Math.Max(1, rect.Right - rect.Left);
+                int h = Math.Max(1, rect.Bottom - rect.Top);
+
+                capturedBmp = new Bitmap(w, h, PixelFormat.Format32bppArgb);
+                using (Graphics g = Graphics.FromImage(capturedBmp))
+                {
+                    IntPtr hdc = g.GetHdc();
+                    PrintWindow(target.Hwnd, hdc, 2);
+                    g.ReleaseHdc(hdc);
+                }
+            }
+
+            if (capturedBmp == null) return null;
+
+            using (capturedBmp)
+            {
+                using var resized = new Bitmap(targetW, targetH);
+                using (var g = Graphics.FromImage(resized))
+                {
+                    g.InterpolationMode = InterpolationMode.Bilinear;
+                    g.DrawImage(capturedBmp, 0, 0, targetW, targetH);
+                }
+
+                using var ms = new MemoryStream();
+                if (encoder != null)
+                    resized.Save(ms, encoder, encParams);
+                else
+                    resized.Save(ms, ImageFormat.Jpeg);
+
+                return ms.ToArray();
+            }
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static ImageCodecInfo? GetEncoder(ImageFormat format)
+    {
+        var codecs = ImageCodecInfo.GetImageDecoders();
+        foreach (var codec in codecs)
+        {
+            if (codec.FormatID == format.Guid)
+                return codec;
+        }
+        return null;
+    }
+
+    public void StopCapture()
+    {
+        _captureCts?.Cancel();
+        _captureCts?.Dispose();
+        _captureCts = null;
+
+        try
+        {
+            _systemAudioCapture?.StopRecording();
+            _systemAudioCapture?.Dispose();
+            _systemAudioCapture = null;
+        }
+        catch { }
+
+        IsCapturing = false;
+    }
+
+    public void Dispose()
+    {
+        StopCapture();
+    }
+}

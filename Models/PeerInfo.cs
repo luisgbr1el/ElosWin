@@ -1,5 +1,6 @@
 ﻿using System;
 using CommunityToolkit.Mvvm.ComponentModel;
+using ElosWin.Models.Enums;
 using Microsoft.UI;
 using Microsoft.UI.Xaml.Media;
 
@@ -53,6 +54,12 @@ public partial class PeerInfo : ObservableObject
 
     [ObservableProperty]
     private bool _isLocallyMuted = false;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsSharingScreen))]
+    private UserState _state = UserState.Idle;
+
+    public bool IsSharingScreen => State == UserState.SharingScreen;
 
     public override bool Equals(object? obj)
     {

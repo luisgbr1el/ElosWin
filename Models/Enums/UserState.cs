@@ -1,9 +1,8 @@
-﻿namespace ElosWin.Models.Enums
+﻿namespace ElosWin.Models.Enums;
+
+public enum UserState
 {
-    public enum UserState
-    {
-        Idle = 0,
-        InCall = 1,
-        SharingScreen = 2
-    }
+    Idle,
+    InCall,
+    SharingScreen
 }

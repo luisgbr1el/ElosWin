@@ -1,3 +1,4 @@
+using System;
 using ElosWin.ViewModels;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
@@ -33,6 +34,22 @@ public sealed partial class MainWindow : Window
                 ViewModel.SelectedNavIndex = 1;
                 CallNavItem.IsSelected = false;
             }
+        }
+    }
+
+    private async void ShareScreenButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (ViewModel.IsSharingScreenLocal)
+        {
+            ViewModel.StopScreenShare();
+            return;
+        }
+
+        ViewModel.PrepareCaptureTargets();
+        var result = await ScreenShareDialog.ShowAsync();
+        if (result == ContentDialogResult.Primary)
+        {
+            ViewModel.StartScreenSharingFromDialog();
         }
     }
 }

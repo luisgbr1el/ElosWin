@@ -1,17 +1,24 @@
 ﻿using System;
 using System.Collections.ObjectModel;
+using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using Concentus;
+using Concentus.Enums;
 using ElosWin.Models;
+using ElosWin.Models.Enums;
 using ElosWin.Services.Audio;
 using ElosWin.Services.Network;
+using ElosWin.Services.ScreenShare;
 using ElosWin.Services.Settings;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Media.Imaging;
 using NAudio.CoreAudioApi;
+using Windows.Storage.Streams;
 
 namespace ElosWin.ViewModels;
 
@@ -21,7 +28,13 @@ public partial class MainViewModel : ObservableObject
     private readonly UdpVoiceClient _udpClient;
     private readonly PeerDiscoveryService _discoveryService;
     private readonly SettingsService _settingsService;
+    private readonly ScreenCaptureService _screenCaptureService;
+    private readonly ScreenNetworkService _screenNetworkService;
     private readonly DispatcherQueue _dispatcherQueue;
+
+    private readonly IOpusEncoder _screenAudioEncoder;
+    private readonly IOpusDecoder _screenAudioDecoder;
+
     private CancellationTokenSource? _vadDecayCts;
 
     // Navegação
@@ -104,6 +117,48 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty]
     public partial string TestMicButtonText { get; set; } = "Testar microfone";
 
+    // Compartilhamento de tela
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ScreenShareButtonGlyph))]
+    [NotifyPropertyChangedFor(nameof(ScreenShareButtonToolTip))]
+    public partial bool IsSharingScreenLocal { get; set; } = false;
+
+    [ObservableProperty]
+    public partial bool HasActiveScreenStream { get; set; } = false;
+
+    [ObservableProperty]
+    public partial string ScreenStreamPresenterText { get; set; } = "Transmissão de tela";
+
+    [ObservableProperty]
+    public partial BitmapImage? RemoteScreenImage { get; set; }
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(StreamVolumeText))]
+    public partial double StreamVolume { get; set; } = 100.0;
+
+    public string StreamVolumeText => $"{(int)StreamVolume}%";
+
+    public string ScreenShareButtonGlyph => IsSharingScreenLocal ? "\uEA14" : "\uE7F4";
+    public string ScreenShareButtonToolTip => IsSharingScreenLocal ? "Parar compartilhamento" : "Compartilhar tela";
+
+    // Opções de Modal/Configuração de Transmissão
+    public ObservableCollection<CaptureTargetItem> AvailableCaptureTargets { get; } = new();
+
+    [ObservableProperty]
+    public partial CaptureTargetItem? SelectedCaptureTarget { get; set; }
+
+    public ObservableCollection<ScreenShareQuality> AvailableQualities { get; } = new()
+    {
+        new ScreenShareQuality("720p 30 FPS", 1280, 720, 30, 65),
+        new ScreenShareQuality("1080p 60 FPS", 1920, 1080, 60, 75)
+    };
+
+    [ObservableProperty]
+    public partial ScreenShareQuality SelectedQuality { get; set; }
+
+    [ObservableProperty]
+    public partial bool ShareScreenAudio { get; set; } = true;
+
     // Dispositivos
     public ObservableCollection<MMDevice> AvailableMicrophones { get; } = new();
     public ObservableCollection<MMDevice> AvailableOutputDevices { get; } = new();
@@ -125,6 +180,13 @@ public partial class MainViewModel : ObservableObject
         _audioService = new WasapiAudioService();
         _udpClient = new UdpVoiceClient();
         _discoveryService = new PeerDiscoveryService();
+        _screenCaptureService = new ScreenCaptureService();
+        _screenNetworkService = new ScreenNetworkService();
+
+        _screenAudioEncoder = OpusCodecFactory.CreateEncoder(48000, 2, OpusApplication.OPUS_APPLICATION_AUDIO);
+        _screenAudioDecoder = OpusCodecFactory.CreateDecoder(48000, 2);
+
+        SelectedQuality = AvailableQualities[0];
 
         var saved = _settingsService.LoadSettings();
         Username = saved.Username;
@@ -187,6 +249,37 @@ public partial class MainViewModel : ObservableObject
             }
         };
 
+        _screenNetworkService.OnFrameReassembled += async (jpegBytes) =>
+        {
+            if (!IsInCall) return;
+
+            _dispatcherQueue.TryEnqueue(async () =>
+            {
+                try
+                {
+                    using var ms = new InMemoryRandomAccessStream();
+                    using (var writer = new DataWriter(ms.GetOutputStreamAt(0)))
+                    {
+                        writer.WriteBytes(jpegBytes);
+                        await writer.StoreAsync();
+                    }
+
+                    var bitmap = new BitmapImage();
+                    await bitmap.SetSourceAsync(ms);
+                    RemoteScreenImage = bitmap;
+                    HasActiveScreenStream = true;
+                }
+                catch { }
+            });
+        };
+
+        _screenNetworkService.OnScreenAudioPacketReceived += (opusPacket, senderEp) =>
+        {
+            if (!IsInCall || IsDeafened) return;
+            float streamVol = (float)(StreamVolume / 100.0);
+            _audioService.PlayReceivedFrameFromSender(opusPacket, "screenshare_stream", streamVol);
+        };
+
         _discoveryService.OnPeerJoinedCall += (peer) =>
         {
             _dispatcherQueue.TryEnqueue(() =>
@@ -196,10 +289,14 @@ public partial class MainViewModel : ObservableObject
                 {
                     ConnectedParticipants.Add(peer);
                     if (IsInCall)
+                    {
                         _udpClient.AddTarget(peer.IpAddress, peer.AudioPort);
+                        _screenNetworkService.AddTarget(peer.IpAddress, peer.AudioPort + 100);
+                    }
                 }
                 ParticipantsCount = ConnectedParticipants.Count;
                 UpdateCallStatusMessage();
+                CheckScreenStreamPresence();
             });
         };
 
@@ -212,10 +309,29 @@ public partial class MainViewModel : ObservableObject
                 {
                     ConnectedParticipants.Remove(existing);
                     if (IsInCall)
+                    {
                         _udpClient.RemoveTarget(peer.IpAddress, peer.AudioPort);
+                        _screenNetworkService.RemoveTarget(peer.IpAddress, peer.AudioPort + 100);
+                    }
                 }
                 ParticipantsCount = ConnectedParticipants.Count;
                 UpdateCallStatusMessage();
+                CheckScreenStreamPresence();
+            });
+        };
+
+        _discoveryService.OnPeerStateChanged += (peer) =>
+        {
+            _dispatcherQueue.TryEnqueue(() =>
+            {
+                if (peer.State == UserState.SharingScreen)
+                {
+                    if (IsSharingScreenLocal)
+                    {
+                        StopScreenSharingInternal();
+                    }
+                }
+                CheckScreenStreamPresence();
             });
         };
 
@@ -225,6 +341,7 @@ public partial class MainViewModel : ObservableObject
             {
                 ParticipantsCount = ConnectedParticipants.Count;
                 UpdateCallStatusMessage();
+                CheckScreenStreamPresence();
             });
         };
 
@@ -232,6 +349,91 @@ public partial class MainViewModel : ObservableObject
 
         if (int.TryParse(LocalPort, out int port))
             _discoveryService.Start(Username, port);
+    }
+
+    private void CheckScreenStreamPresence()
+    {
+        var presenter = ConnectedParticipants.FirstOrDefault(p => p.State == UserState.SharingScreen);
+        if (presenter != null)
+        {
+            HasActiveScreenStream = true;
+            ScreenStreamPresenterText = presenter.IsLocalUser ? "Você está transmitindo" : $"Transmitido por {presenter.Username}";
+        }
+        else
+        {
+            HasActiveScreenStream = false;
+            RemoteScreenImage = null;
+        }
+    }
+
+    public void PrepareCaptureTargets()
+    {
+        AvailableCaptureTargets.Clear();
+        var targets = ScreenCaptureService.GetAvailableCaptureTargets();
+        foreach (var t in targets) AvailableCaptureTargets.Add(t);
+        SelectedCaptureTarget = AvailableCaptureTargets.FirstOrDefault();
+    }
+
+    public void StartScreenSharingFromDialog()
+    {
+        if (!IsInCall || SelectedCaptureTarget == null) return;
+
+        IsSharingScreenLocal = true;
+        _discoveryService.CurrentState = UserState.SharingScreen;
+        _discoveryService.BroadcastImmediateState();
+
+        var localUser = ConnectedParticipants.FirstOrDefault(p => p.IsLocalUser);
+        if (localUser != null) localUser.State = UserState.SharingScreen;
+
+        CheckScreenStreamPresence();
+
+        _screenCaptureService.StartCapture(
+            SelectedCaptureTarget,
+            SelectedQuality,
+            ShareScreenAudio,
+            (frameData) =>
+            {
+                _screenNetworkService.BroadcastVideoFrame(frameData);
+            },
+            (audioData, bytesRecorded) =>
+            {
+                try
+                {
+                    short[] pcm = new short[bytesRecorded / 2];
+                    System.Buffer.BlockCopy(audioData, 0, pcm, 0, bytesRecorded);
+                    byte[] opus = new byte[1275];
+                    int encoded = _screenAudioEncoder.Encode(pcm, pcm.Length / 2, opus, opus.Length);
+                    if (encoded > 0)
+                    {
+                        _screenNetworkService.BroadcastScreenAudio(opus, encoded);
+                    }
+                }
+                catch { }
+            }
+        );
+    }
+
+    private void StopScreenSharingInternal()
+    {
+        _screenCaptureService.StopCapture();
+        IsSharingScreenLocal = false;
+
+        if (IsInCall)
+        {
+            _discoveryService.CurrentState = UserState.InCall;
+            _discoveryService.BroadcastImmediateState();
+
+            var localUser = ConnectedParticipants.FirstOrDefault(p => p.IsLocalUser);
+            if (localUser != null) localUser.State = UserState.InCall;
+        }
+
+        CheckScreenStreamPresence();
+    }
+
+    [RelayCommand]
+    public void StopScreenShare()
+    {
+        StopScreenSharingInternal();
     }
 
     private void UpdateCallStatusMessage()
@@ -450,6 +652,7 @@ public partial class MainViewModel : ObservableObject
             int localP = int.Parse(LocalPort);
 
             _udpClient.Start(localP);
+            _screenNetworkService.Start(localP + 100);
 
             _audioService.StartNetworkStream((packet, length) =>
             {
@@ -465,13 +668,15 @@ public partial class MainViewModel : ObservableObject
                     Username = Username,
                     IsLocalUser = true,
                     AudioPort = localP,
-                    IpAddress = "127.0.0.1"
+                    IpAddress = "127.0.0.1",
+                    State = UserState.InCall
                 });
             }
 
             foreach (var peer in ConnectedParticipants.Where(p => !p.IsLocalUser))
             {
                 _udpClient.AddTarget(peer.IpAddress, peer.AudioPort);
+                _screenNetworkService.AddTarget(peer.IpAddress, peer.AudioPort + 100);
             }
 
             _discoveryService.BroadcastImmediateState();
@@ -491,11 +696,15 @@ public partial class MainViewModel : ObservableObject
     [RelayCommand]
     private void LeaveCall()
     {
+        if (IsSharingScreenLocal)
+            StopScreenSharingInternal();
+
         _vadDecayCts?.Cancel();
         _vadDecayCts = null;
 
         _audioService.Stop();
         _udpClient.Stop();
+        _screenNetworkService.Stop();
 
         _discoveryService.IsInCall = false;
         _discoveryService.BroadcastImmediateState();
@@ -510,6 +719,8 @@ public partial class MainViewModel : ObservableObject
             ConnectedParticipants.Remove(localUser);
 
         IsInCall = false;
+        HasActiveScreenStream = false;
+        RemoteScreenImage = null;
         ParticipantsCount = ConnectedParticipants.Count;
         UpdateCallStatusMessage();
         VoiceLevel = 0;
