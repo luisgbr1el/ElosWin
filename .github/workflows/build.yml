@@ -3,6 +3,7 @@ name: Release Elos
 on:
   release:
     types: [published]
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -41,6 +42,7 @@ jobs:
     - name: Anexar ZIP na Release
       uses: softprops/action-gh-release@v2
       with:
+        tag_name: ${{ github.event.release.tag_name || 'latest' }}
         files: ./Elos-win-x64.zip
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
