@@ -1,0 +1,10 @@
+{
+  "profiles": {
+    "ElosWin (Package)": {
+      "commandName": "MsixPackage"
+    },
+    "ElosWin (Unpackaged)": {
+      "commandName": "Project"
+    }
+  }
+}
