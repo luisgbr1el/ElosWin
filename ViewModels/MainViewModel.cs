@@ -148,21 +148,26 @@ public partial class MainViewModel : ObservableObject
             {
                 VoiceLevel = Math.Clamp(level * 100.0, 0.0, 100.0);
 
-                var localUser = ConnectedParticipants.FirstOrDefault(p => p.IsLocalUser);
-                if (localUser != null && !IsMuted && !IsDeafened)
+                if (IsInCall)
                 {
-                    if (level > 0.035f)
+                    var localUser = ConnectedParticipants.FirstOrDefault(p => p.IsLocalUser);
+                    if (localUser != null && !IsMuted && !IsDeafened)
                     {
-                        localUser.IsSpeaking = true;
-                        localUser.LastSpokeTime = DateTime.Now;
+                        if (level > 0.035f)
+                        {
+                            localUser.IsSpeaking = true;
+                            localUser.LastSpokeTime = DateTime.Now;
+                        }
                     }
                 }
             });
         };
 
-        // Recepção de áudio com identificação por Peer
+        // Recepção de áudio de outros participantes
         _udpClient.OnAudioPacketReceived += (opusPacket, senderEp) =>
         {
+            if (!IsInCall) return;
+
             string senderKey = senderEp.ToString();
             _audioService.PlayReceivedFrameFromSender(opusPacket, senderKey);
 
@@ -187,7 +192,9 @@ public partial class MainViewModel : ObservableObject
                 {
                     ConnectedParticipants.Add(peer);
                     if (IsInCall)
+                    {
                         _udpClient.AddTarget(peer.IpAddress, peer.AudioPort);
+                    }
                 }
                 ParticipantsCount = ConnectedParticipants.Count;
                 UpdateCallStatusMessage();
@@ -265,11 +272,14 @@ public partial class MainViewModel : ObservableObject
 
                 _dispatcherQueue.TryEnqueue(() =>
                 {
-                    foreach (var participant in ConnectedParticipants)
+                    if (IsInCall)
                     {
-                        if (participant.IsSpeaking && (now - participant.LastSpokeTime).TotalMilliseconds > 400)
+                        foreach (var participant in ConnectedParticipants)
                         {
-                            participant.IsSpeaking = false;
+                            if (participant.IsSpeaking && (now - participant.LastSpokeTime).TotalMilliseconds > 400)
+                            {
+                                participant.IsSpeaking = false;
+                            }
                         }
                     }
                 });
@@ -450,7 +460,6 @@ public partial class MainViewModel : ObservableObject
 
             _discoveryService.IsInCall = true;
 
-            // Insere o próprio usuário no topo
             if (!ConnectedParticipants.Any(p => p.IsLocalUser))
             {
                 ConnectedParticipants.Insert(0, new PeerInfo
@@ -462,7 +471,6 @@ public partial class MainViewModel : ObservableObject
                 });
             }
 
-            // Registra todos os peers da sala no cliente UDP
             foreach (var peer in ConnectedParticipants.Where(p => !p.IsLocalUser))
             {
                 _udpClient.AddTarget(peer.IpAddress, peer.AudioPort);
@@ -493,6 +501,11 @@ public partial class MainViewModel : ObservableObject
 
         _discoveryService.IsInCall = false;
         _discoveryService.BroadcastImmediateState();
+
+        foreach (var p in ConnectedParticipants)
+        {
+            p.IsSpeaking = false;
+        }
 
         var localUser = ConnectedParticipants.FirstOrDefault(p => p.IsLocalUser);
         if (localUser != null)

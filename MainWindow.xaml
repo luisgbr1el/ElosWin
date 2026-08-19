@@ -67,7 +67,7 @@
                         <!-- Cabeçalho -->
                         <Grid ColumnDefinitions="*, Auto">
                             <StackPanel Spacing="4">
-                                <TextBlock Text="Chamada de voz" FontSize="26" FontWeight="Bold"/>
+                                <TextBlock Text="Chamada" FontSize="26" FontWeight="Bold"/>
                                 <TextBlock Text="Converse com pessoas na sua rede local ou VPN" FontSize="13" Opacity="0.6"/>
                             </StackPanel>
 
