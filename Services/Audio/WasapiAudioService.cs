@@ -138,8 +138,7 @@ public class WasapiAudioService : IAudioService
 
         _waveProvider = new BufferedWaveProvider(waveFormat)
         {
-            DiscardOnBufferOverflow = true,
-            BufferLength = FrameBytes * 25
+            DiscardOnBufferOverflow = true
         };
 
         var enumerator = new MMDeviceEnumerator();
