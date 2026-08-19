@@ -135,9 +135,7 @@ public class PeerDiscoveryService : IDisposable
                 foreach (var addr in ni.GetIPProperties().UnicastAddresses)
                 {
                     if (addr.Address.AddressFamily == AddressFamily.InterNetwork)
-                    {
                         localIps.Add(addr.Address.ToString());
-                    }
                 }
             }
         }
@@ -197,22 +195,17 @@ public class PeerDiscoveryService : IDisposable
                     string peerUser = parts[2];
 
                     if (Guid.TryParse(senderGuidStr, out Guid senderGuid) && senderGuid == _instanceId)
-                    {
                         continue;
-                    }
 
                     if (int.TryParse(parts[3], out int peerAudioPort))
                     {
                         string peerIp = result.RemoteEndPoint.Address.ToString();
                         if (myIps.Contains(peerIp) && peerAudioPort == MyAudioPort)
-                        {
                             continue;
-                        }
 
                         string state = parts[4];
                         string peerKey = $"{peerIp}:{peerAudioPort}";
 
-                        // Responde Unicast com PONG imediatamente para confirmar presença
                         if (packetType == "ELOS_PING" && _udpClient != null)
                         {
                             try
@@ -244,16 +237,12 @@ public class PeerDiscoveryService : IDisposable
                             });
 
                             if (isNew)
-                            {
                                 OnPeerJoinedCall?.Invoke(peer);
-                            }
                         }
                         else
                         {
                             if (_activePeers.TryRemove(peerKey, out var removed))
-                            {
                                 OnPeerLeftCall?.Invoke(removed);
-                            }
                         }
 
                         OnCallStateUpdated?.Invoke(_activePeers.Count);
@@ -288,15 +277,11 @@ public class PeerDiscoveryService : IDisposable
                 foreach (var key in expired)
                 {
                     if (_activePeers.TryRemove(key, out var expiredPeer))
-                    {
                         OnPeerLeftCall?.Invoke(expiredPeer);
-                    }
                 }
 
                 if (expired.Count > 0)
-                {
                     OnCallStateUpdated?.Invoke(_activePeers.Count);
-                }
             }
             catch (OperationCanceledException)
             {

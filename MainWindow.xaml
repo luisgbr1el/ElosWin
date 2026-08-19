@@ -116,7 +116,8 @@
                                                   SelectionMode="None">
                                             <ListView.ItemTemplate>
                                                 <DataTemplate x:DataType="models:PeerInfo">
-                                                    <Grid ColumnDefinitions="Auto, *" Padding="8,6">
+                                                    <Grid ColumnDefinitions="Auto, *, Auto" Padding="8,6">
+                                                        <!-- Avatar / Indicador de Fala -->
                                                         <Border Grid.Column="0" 
                                                                 Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
                                                                 BorderBrush="{x:Bind SpeakingBorderBrush, Mode=OneWay}"
@@ -128,10 +129,53 @@
                                                             <FontIcon Glyph="&#xE77B;" FontSize="15" Foreground="{ThemeResource TextFillColorSecondaryBrush}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                                         </Border>
 
+                                                        <!-- Detalhes do Usuário -->
                                                         <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
-                                                            <TextBlock Text="{x:Bind DisplayName}" FontSize="13" FontWeight="SemiBold"/>
+                                                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                                                <TextBlock Text="{x:Bind DisplayName}" FontSize="13" FontWeight="SemiBold"/>
+                                                                <FontIcon Glyph="&#xE74F;" FontSize="11" Foreground="#E11D48" VerticalAlignment="Center" Visibility="{x:Bind IsLocallyMuted, Mode=OneWay}"/>
+                                                            </StackPanel>
                                                             <TextBlock Text="{x:Bind Subtitle}" FontSize="11" Opacity="0.5"/>
                                                         </StackPanel>
+
+                                                        <!-- Opções do Usuário (Três Pontinhos) -->
+                                                        <Button Grid.Column="2"
+                                                                Visibility="{x:Bind IsRemoteUser, Mode=OneWay}"
+                                                                Background="Transparent"
+                                                                BorderThickness="0"
+                                                                Padding="8,4"
+                                                                VerticalAlignment="Center"
+                                                                ToolTipService.ToolTip="Opções do usuário">
+                                                            <FontIcon Glyph="&#xE712;" FontSize="14"/>
+                                                            <Button.Flyout>
+                                                                <Flyout Placement="LeftEdgeAlignedTop">
+                                                                    <StackPanel Width="230" Spacing="14" Padding="4">
+                                                                        <TextBlock Text="{x:Bind Username}" FontWeight="SemiBold" FontSize="14"/>
+
+                                                                        <!-- Controle de Volume Individual -->
+                                                                        <StackPanel Spacing="6">
+                                                                            <Grid ColumnDefinitions="*, Auto">
+                                                                                <TextBlock Text="Volume do usuário" FontSize="12" Opacity="0.8"/>
+                                                                                <TextBlock Grid.Column="1" Text="{x:Bind UserVolumeText, Mode=OneWay}" FontSize="12" FontWeight="SemiBold"/>
+                                                                            </Grid>
+                                                                            <Slider Value="{x:Bind UserVolume, Mode=TwoWay}"
+                                                                                    Minimum="0"
+                                                                                    Maximum="200"
+                                                                                    StepFrequency="1"
+                                                                                    HorizontalAlignment="Stretch"/>
+                                                                        </StackPanel>
+
+                                                                        <MenuFlyoutSeparator Margin="0"/>
+
+                                                                        <!-- Mutar para mim -->
+                                                                        <ToggleSwitch Header="Mutar para mim"
+                                                                                      IsOn="{x:Bind IsLocallyMuted, Mode=TwoWay}"
+                                                                                      OnContent="Mutado"
+                                                                                      OffContent="Ouvindo"/>
+                                                                    </StackPanel>
+                                                                </Flyout>
+                                                            </Button.Flyout>
+                                                        </Button>
                                                     </Grid>
                                                 </DataTemplate>
                                             </ListView.ItemTemplate>
@@ -241,7 +285,7 @@
                                                 Value="{x:Bind ViewModel.InputVolume, Mode=TwoWay}" 
                                                 Minimum="0" 
                                                 Maximum="200" 
-                                                StepFrequency="1"
+                                                StepFrequency="1" 
                                                 HorizontalAlignment="Stretch"/>
                                     </Grid>
                                 </StackPanel>
@@ -265,7 +309,7 @@
                                                 Value="{x:Bind ViewModel.OutputVolume, Mode=TwoWay}" 
                                                 Minimum="0" 
                                                 Maximum="100" 
-                                                StepFrequency="1"
+                                                StepFrequency="1" 
                                                 HorizontalAlignment="Stretch"/>
                                     </Grid>
                                 </StackPanel>
@@ -285,7 +329,7 @@
                                                     IsEnabled="{x:Bind ViewModel.EnableNoiseSuppression, Mode=OneWay}"
                                                     Minimum="0" 
                                                     Maximum="100" 
-                                                    StepFrequency="1"
+                                                    StepFrequency="1" 
                                                     HorizontalAlignment="Stretch"/>
                                         </Grid>
 
@@ -296,7 +340,7 @@
                                                     IsEnabled="{x:Bind ViewModel.EnableNoiseSuppression, Mode=OneWay}"
                                                     Minimum="0" 
                                                     Maximum="100" 
-                                                    StepFrequency="1"
+                                                    StepFrequency="1" 
                                                     HorizontalAlignment="Stretch"/>
                                         </Grid>
                                     </StackPanel>
@@ -306,7 +350,7 @@
                                         Command="{x:Bind ViewModel.ToggleTestMicCommand}"
                                         IsEnabled="{x:Bind ViewModel.IsNotInCall, Mode=OneWay}"
                                         HorizontalAlignment="Stretch"
-                                        Height="38"
+                                        Height="38" 
                                         CornerRadius="6"/>
 
                                 <!-- Medidor de Volume -->

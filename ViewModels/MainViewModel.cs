@@ -141,7 +141,6 @@ public partial class MainViewModel : ObservableObject
         _audioService.NoiseSuppressionStrength = (float)(NoiseSuppressionLevel / 100.0);
         _audioService.GateSensitivity = (float)(GateSensitivity / 100.0);
 
-        // VAD local
         _audioService.OnVoiceLevelChanged += (level) =>
         {
             _dispatcherQueue.TryEnqueue(() =>
@@ -163,18 +162,21 @@ public partial class MainViewModel : ObservableObject
             });
         };
 
-        // Recepção de áudio de outros participantes
         _udpClient.OnAudioPacketReceived += (opusPacket, senderEp) =>
         {
             if (!IsInCall) return;
+
+            string senderIp = senderEp.Address.ToString();
+            var remotePeer = ConnectedParticipants.FirstOrDefault(p => !p.IsLocalUser && (p.IpAddress == senderIp || p.AudioPort == senderEp.Port));
+
+            if (remotePeer != null && remotePeer.IsLocallyMuted)
+                return;
 
             string senderKey = senderEp.ToString();
             _audioService.PlayReceivedFrameFromSender(opusPacket, senderKey);
 
             _dispatcherQueue.TryEnqueue(() =>
             {
-                string senderIp = senderEp.Address.ToString();
-                var remotePeer = ConnectedParticipants.FirstOrDefault(p => !p.IsLocalUser && (p.IpAddress == senderIp || p.AudioPort == senderEp.Port));
                 if (remotePeer != null)
                 {
                     remotePeer.IsSpeaking = true;
@@ -192,9 +194,7 @@ public partial class MainViewModel : ObservableObject
                 {
                     ConnectedParticipants.Add(peer);
                     if (IsInCall)
-                    {
                         _udpClient.AddTarget(peer.IpAddress, peer.AudioPort);
-                    }
                 }
                 ParticipantsCount = ConnectedParticipants.Count;
                 UpdateCallStatusMessage();
@@ -229,9 +229,7 @@ public partial class MainViewModel : ObservableObject
         LoadDevices(saved.SelectedMicrophoneId, saved.SelectedOutputDeviceId);
 
         if (int.TryParse(LocalPort, out int port))
-        {
             _discoveryService.Start(Username, port);
-        }
     }
 
     private void UpdateCallStatusMessage()
@@ -277,9 +275,7 @@ public partial class MainViewModel : ObservableObject
                         foreach (var participant in ConnectedParticipants)
                         {
                             if (participant.IsSpeaking && (now - participant.LastSpokeTime).TotalMilliseconds > 400)
-                            {
                                 participant.IsSpeaking = false;
-                            }
                         }
                     }
                 });

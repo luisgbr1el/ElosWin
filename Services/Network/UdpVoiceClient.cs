@@ -13,7 +13,6 @@ public class UdpVoiceClient : IDisposable
     private CancellationTokenSource? _cts;
     private int _currentLocalPort;
 
-    // Lista de todos os destinos da chamada (Mesh)
     private readonly ConcurrentDictionary<string, IPEndPoint> _callEndpoints = new();
 
     public bool IsListening { get; private set; }
@@ -40,9 +39,7 @@ public class UdpVoiceClient : IDisposable
     {
         string key = $"{ip}:{port}";
         if (IPAddress.TryParse(ip, out var parsedIp))
-        {
             _callEndpoints.TryAdd(key, new IPEndPoint(parsedIp, port));
-        }
     }
 
     public void RemoveTarget(string ip, int port)
@@ -89,9 +86,7 @@ public class UdpVoiceClient : IDisposable
                 UdpReceiveResult result = await _udpClient.ReceiveAsync(token);
 
                 if (result.RemoteEndPoint.Port == _currentLocalPort && IPAddress.IsLoopback(result.RemoteEndPoint.Address))
-                {
                     continue;
-                }
 
                 OnAudioPacketReceived?.Invoke(result.Buffer, result.RemoteEndPoint);
             }
