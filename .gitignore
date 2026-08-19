@@ -1,5 +1,14 @@
 bin/
 obj/
 publish/
-.vs/
+*.zip
 *.rar
+
+.vs/
+.vscode/
+*.user
+*.suo
+
+*.log
+Thumbs.db
+Desktop.ini

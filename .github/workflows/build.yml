@@ -1,0 +1,56 @@
+name: Build and Release Elos
+
+on:
+  push:
+    branches: [ "main", "master" ]
+    tags:
+      - "v*"
+  pull_request:
+    branches: [ "main", "master" ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+    - name: Checkout do código
+      uses: actions/checkout@v4
+
+    - name: Configurar .NET 9
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: '9.0.x'
+
+    - name: Restaurar dependências
+      run: dotnet restore
+
+    - name: Publicar executável (Self-Contained x64)
+      run: >
+        dotnet publish -c Release -r win-x64 --self-contained
+        -p:Platform=x64
+        -p:PlatformTarget=x64
+        -p:WindowsPackageType=None
+        -p:WindowsAppSDKSelfContained=true
+        -p:PublishSingleFile=false
+        -o ./publish
+
+    - name: Compactar em ZIP
+      shell: pwsh
+      run: |
+        Compress-Archive -Path ./publish/* -DestinationPath ./Elos-win-x64.zip
+
+    - name: Upload do ZIP (Artefato de Build)
+      uses: actions/upload-artifact@v4
+      with:
+        name: Elos-win-x64
+        path: ./Elos-win-x64.zip
+        retention-days: 14
+
+    - name: Criar GitHub Release
+      if: startsWith(github.ref, 'refs/tags/')
+      uses: softprops/action-gh-release@v2
+      with:
+        files: ./Elos-win-x64.zip
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
