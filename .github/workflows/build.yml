@@ -1,16 +1,14 @@
-name: Build and Release Elos
+name: Release Elos
 
 on:
-  push:
-    branches: [ "main", "master" ]
-    tags:
-      - "v*"
-  pull_request:
-    branches: [ "main", "master" ]
-  workflow_dispatch:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
 
 jobs:
-  build:
+  build-and-upload:
     runs-on: windows-latest
 
     steps:
@@ -40,15 +38,7 @@ jobs:
       run: |
         Compress-Archive -Path ./publish/* -DestinationPath ./Elos-win-x64.zip
 
-    - name: Upload do ZIP (Artefato de Build)
-      uses: actions/upload-artifact@v4
-      with:
-        name: Elos-win-x64
-        path: ./Elos-win-x64.zip
-        retention-days: 14
-
-    - name: Criar GitHub Release
-      if: startsWith(github.ref, 'refs/tags/')
+    - name: Anexar ZIP na Release
       uses: softprops/action-gh-release@v2
       with:
         files: ./Elos-win-x64.zip
