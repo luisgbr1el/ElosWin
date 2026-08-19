@@ -1,184 +1,306 @@
 ﻿using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using Microsoft.ML.OnnxRuntime;
+using Microsoft.ML.OnnxRuntime.Tensors;
 
 namespace ElosWin.Services.Audio;
 
-public class SpectralNoiseSuppressor
+public class SpectralNoiseSuppressor : IDisposable
 {
-    private const int FftSize = 1024;
-    private const int HalfFft = FftSize / 2;
-    private const int HopSize = 480; // 10ms a 48kHz
+    private const int ChunkSize = 480;
+    private InferenceSession? _session;
+    private bool _hasModel = false;
 
-    private readonly float[] _inputBuffer = new float[FftSize];
-    private readonly float[] _outputBuffer = new float[FftSize * 2];
-    private readonly float[] _window = new float[FftSize];
+    private string _audioInputName = "input_frame";
+    private string _statesInputName = "states";
+    private string? _attenLimInputName = null;
+    private string _statesOutputName = "out_states";
+    private DenseTensor<float>? _rnnStateTensor;
+    private readonly object _lock = new();
 
-    private readonly float[] _noisePower = new float[HalfFft + 1];
-    private readonly float[] _prevGain = new float[HalfFft + 1];
+    private float _x1, _x2, _y1, _y2;
+    private readonly float _b0, _b1, _b2, _a1, _a2;
 
-    private bool _noiseInitialized = false;
-    private int _noiseInitFrames = 0;
+    private float _prevSample = 0f;
+    private float _clickSmoothing = 0f;
 
-    public float SuppressionStrength { get; set; } = 0.75f; // 0.0 a 1.0
+    private float _envelope = 0f;
+    private float _currentGain = 1f;
+
+    public float SuppressionStrength { get; set; } = 0.85f;
 
     public SpectralNoiseSuppressor()
     {
-        // Janela de Hann para análise espectral sem descontinuidade
-        for (int i = 0; i < FftSize; i++)
-        {
-            _window[i] = 0.5f * (1.0f - (float)Math.Cos(2.0 * Math.PI * i / (FftSize - 1)));
-        }
+        double f0 = 90.0;
+        double fs = 48000.0;
+        double w0 = 2.0 * Math.PI * f0 / fs;
+        double cosW0 = Math.Cos(w0);
+        double sinW0 = Math.Sin(w0);
+        double alpha = sinW0 / (2.0 * 0.7071);
 
-        for (int i = 0; i <= HalfFft; i++)
+        double a0 = 1.0 + alpha;
+        _b0 = (float)((1.0 + cosW0) / 2.0 / a0);
+        _b1 = (float)(-(1.0 + cosW0) / a0);
+        _b2 = (float)((1.0 + cosW0) / 2.0 / a0);
+        _a1 = (float)(-2.0 * cosW0 / a0);
+        _a2 = (float)((1.0 - alpha) / a0);
+
+        try
         {
-            _prevGain[i] = 1.0f;
-            _noisePower[i] = 1000f;
+            string modelPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Assets", "denoiser.onnx");
+            if (File.Exists(modelPath))
+            {
+                var options = new SessionOptions();
+                options.AppendExecutionProvider_CPU(1);
+                _session = new InferenceSession(modelPath, options);
+
+                var inputMetadata = _session.InputMetadata;
+
+                var attenKey = inputMetadata.Keys.FirstOrDefault(k =>
+                    k.Contains("atten", StringComparison.OrdinalIgnoreCase) ||
+                    k.Contains("db", StringComparison.OrdinalIgnoreCase));
+                if (!string.IsNullOrEmpty(attenKey))
+                    _attenLimInputName = attenKey;
+
+                var audioKey = inputMetadata.Keys.FirstOrDefault(k =>
+                    k.Equals("input_frame", StringComparison.OrdinalIgnoreCase) ||
+                    k.Contains("audio", StringComparison.OrdinalIgnoreCase) ||
+                    (k.Contains("input", StringComparison.OrdinalIgnoreCase) && k != _attenLimInputName));
+
+                if (!string.IsNullOrEmpty(audioKey))
+                    _audioInputName = audioKey;
+
+                var stateKey = inputMetadata.Keys.FirstOrDefault(k =>
+                    k.Equals("states", StringComparison.OrdinalIgnoreCase) ||
+                    k.Contains("state", StringComparison.OrdinalIgnoreCase));
+
+                if (!string.IsNullOrEmpty(stateKey) && inputMetadata.TryGetValue(stateKey, out var stateMeta))
+                {
+                    _statesInputName = stateKey;
+                    int[] rawDims = stateMeta.Dimensions;
+                    int[] safeDims = rawDims.Select(d => d > 0 ? d : 1).ToArray();
+                    if (safeDims.Length == 0) safeDims = new[] { 1, 128 };
+                    _rnnStateTensor = new DenseTensor<float>(safeDims);
+                }
+                else
+                {
+                    var remainingKey = inputMetadata.Keys.FirstOrDefault(k => k != _audioInputName && k != _attenLimInputName);
+                    if (!string.IsNullOrEmpty(remainingKey))
+                    {
+                        _statesInputName = remainingKey;
+                        int[] safeDims = inputMetadata[remainingKey].Dimensions.Select(d => d > 0 ? d : 1).ToArray();
+                        if (safeDims.Length == 0) safeDims = new[] { 1, 128 };
+                        _rnnStateTensor = new DenseTensor<float>(safeDims);
+                    }
+                }
+
+                var outputMetadata = _session.OutputMetadata;
+                var outStateKey = outputMetadata.Keys.FirstOrDefault(k =>
+                    k.Contains("state", StringComparison.OrdinalIgnoreCase));
+                if (!string.IsNullOrEmpty(outStateKey))
+                    _statesOutputName = outStateKey;
+
+                _hasModel = true;
+                System.Diagnostics.Debug.WriteLine($"[ONNX RNN] Carregado. Audio: '{_audioInputName}', States: '{_statesInputName}', AttenLim: '{_attenLimInputName ?? "None"}'");
+            }
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"[ONNX] Erro ao carregar modelo: {ex.Message}");
+            _hasModel = false;
         }
     }
 
     public void Process(short[] pcmBuffer, int sampleCount, bool isSpeechActive)
     {
-        // Processa em blocos de 480 amostras com 50% de overlap-add
-        for (int offset = 0; offset < sampleCount; offset += HopSize)
+        lock (_lock)
         {
-            int currentHop = Math.Min(HopSize, sampleCount - offset);
-            ProcessHop(pcmBuffer, offset, currentHop, isSpeechActive);
+            SuppressClickTransients(pcmBuffer, sampleCount);
+
+            if (_hasModel && _session != null)
+                ProcessWithRnnOnnx(pcmBuffer, sampleCount);
+            else
+                ProcessWithNeuralGain(pcmBuffer, sampleCount);
+
+            ApplyNoiseGatePostProcess(pcmBuffer, sampleCount);
         }
     }
 
-    private void ProcessHop(short[] pcmBuffer, int offset, int count, bool isSpeechActive)
+    private void SuppressClickTransients(short[] pcmBuffer, int sampleCount)
     {
-        // Desloca o buffer de entrada
-        Array.Copy(_inputBuffer, count, _inputBuffer, 0, FftSize - count);
-        for (int i = 0; i < count; i++)
+        float thresholdDelta = 3200f;
+
+        for (int i = 0; i < sampleCount; i++)
         {
-            _inputBuffer[FftSize - count + i] = pcmBuffer[offset + i];
-        }
+            float current = pcmBuffer[i];
+            float delta = Math.Abs(current - _prevSample);
 
-        // Aplica janela de Hann
-        float[] real = new float[FftSize];
-        float[] imag = new float[FftSize];
-        for (int i = 0; i < FftSize; i++)
-        {
-            real[i] = _inputBuffer[i] * _window[i];
-            imag[i] = 0f;
-        }
+            if (delta > thresholdDelta)
+                _clickSmoothing = 0.55f;
 
-        // FFT direta
-        Fft(real, imag, false);
-
-        // Subtração Espectral e Filtro Wiener
-        float alpha = 1.0f + (SuppressionStrength * 2.5f); // Fator de sobre-subtração
-        float beta = 0.02f + ((1.0f - SuppressionStrength) * 0.08f); // Piso espectral (evita som metálico)
-
-        for (int k = 0; k <= HalfFft; k++)
-        {
-            float power = (real[k] * real[k]) + (imag[k] * imag[k]);
-
-            // Atualiza perfil de ruído estático nas pausas da fala
-            if (!isSpeechActive || !_noiseInitialized)
+            if (_clickSmoothing > 0.01f)
             {
-                _noisePower[k] = (_noisePower[k] * 0.92f) + (power * 0.08f);
-                if (++_noiseInitFrames > 30) _noiseInitialized = true;
+                current = (_prevSample * 0.7f) + (current * 0.3f);
+                _clickSmoothing *= 0.85f;
             }
 
-            float currentNoise = _noisePower[k];
-            float snr = (power - (alpha * currentNoise)) / Math.Max(power, 1e-6f);
-            float gain = Math.Clamp(snr, beta, 1.0f);
-
-            // Suavização temporal entre frames para evitar "musical noise"
-            gain = (_prevGain[k] * 0.4f) + (gain * 0.6f);
-            _prevGain[k] = gain;
-
-            real[k] *= gain;
-            imag[k] *= gain;
-
-            if (k > 0 && k < HalfFft)
-            {
-                real[FftSize - k] = real[k];
-                imag[FftSize - k] = -imag[k];
-            }
+            _prevSample = current;
+            pcmBuffer[i] = (short)Math.Clamp((int)current, short.MinValue, short.MaxValue);
         }
-
-        // IFFT (Transformada Inversa)
-        Fft(real, imag, true);
-
-        // Overlap-Add no buffer de saída
-        for (int i = 0; i < FftSize; i++)
-        {
-            _outputBuffer[i] += real[i] * _window[i];
-        }
-
-        // Copia de volta para o buffer PCM
-        for (int i = 0; i < count; i++)
-        {
-            float sample = _outputBuffer[i];
-            pcmBuffer[offset + i] = (short)Math.Clamp((int)sample, short.MinValue, short.MaxValue);
-        }
-
-        // Desloca o buffer de saída
-        Array.Copy(_outputBuffer, count, _outputBuffer, 0, _outputBuffer.Length - count);
-        Array.Clear(_outputBuffer, _outputBuffer.Length - count, count);
     }
 
-    private static void Fft(float[] real, float[] imag, bool inverse)
+    private void ApplyNoiseGatePostProcess(short[] pcmBuffer, int sampleCount)
     {
-        int n = real.Length;
-        int j = 0;
-
-        for (int i = 0; i < n - 1; i++)
+        double sum = 0;
+        for (int i = 0; i < sampleCount; i++)
         {
-            if (i < j)
-            {
-                (real[i], real[j]) = (real[j], real[i]);
-                (imag[i], imag[j]) = (imag[j], imag[i]);
-            }
-            int k = n / 2;
-            while (k <= j)
-            {
-                j -= k;
-                k /= 2;
-            }
-            j += k;
+            sum += pcmBuffer[i] * pcmBuffer[i];
         }
 
-        for (int len = 2; len <= n; len <<= 1)
+        double rms = Math.Sqrt(sum / sampleCount);
+        float gateFloor = rms < 180 ? 0.0f : 1.0f;
+
+        for (int i = 0; i < sampleCount; i++)
         {
-            double angle = 2.0 * Math.PI / len * (inverse ? 1 : -1);
-            float wlen_r = (float)Math.Cos(angle);
-            float wlen_i = (float)Math.Sin(angle);
+            _currentGain += 0.1f * (gateFloor - _currentGain);
+            pcmBuffer[i] = (short)(pcmBuffer[i] * _currentGain);
+        }
+    }
 
-            for (int i = 0; i < n; i += len)
+    private void ProcessWithRnnOnnx(short[] pcmBuffer, int sampleCount)
+    {
+        try
+        {
+            float strength = SuppressionStrength;
+
+            for (int offset = 0; offset < sampleCount; offset += ChunkSize)
             {
-                float w_r = 1.0f;
-                float w_i = 0.0f;
+                int len = Math.Min(ChunkSize, sampleCount - offset);
+                if (len < ChunkSize) break;
 
-                for (int k = 0; k < len / 2; k++)
+                float[] floatChunk = new float[ChunkSize];
+                for (int i = 0; i < ChunkSize; i++)
                 {
-                    int u = i + k;
-                    int v = i + k + (len / 2);
+                    floatChunk[i] = pcmBuffer[offset + i] / 32768.0f;
+                }
 
-                    float v_r = (real[v] * w_r) - (imag[v] * w_i);
-                    float v_i = (real[v] * w_i) + (imag[v] * w_r);
+                var audioTensor = new DenseTensor<float>(floatChunk, new[] { ChunkSize });
 
-                    real[v] = real[u] - v_r;
-                    imag[v] = imag[u] - v_i;
-                    real[u] += v_r;
-                    imag[u] += v_i;
+                var inputs = new List<NamedOnnxValue>
+                {
+                    NamedOnnxValue.CreateFromTensor(_audioInputName, audioTensor)
+                };
 
-                    float next_w_r = (w_r * wlen_r) - (w_i * wlen_i);
-                    w_i = (w_r * wlen_i) + (w_i * wlen_r);
-                    w_r = next_w_r;
+                if (_rnnStateTensor != null)
+                    inputs.Add(NamedOnnxValue.CreateFromTensor(_statesInputName, _rnnStateTensor));
+
+                if (!string.IsNullOrEmpty(_attenLimInputName))
+                {
+                    var attenDims = _session!.InputMetadata[_attenLimInputName].Dimensions;
+                    int[] safeDims = attenDims.Length == 0 ? new[] { 1 } : attenDims.Select(d => d > 0 ? d : 1).ToArray();
+
+                    var attenTensor = new DenseTensor<float>(safeDims);
+                    for (int i = 0; i < attenTensor.Length; i++)
+                    {
+                        attenTensor.SetValue(i, -100.0f);
+                    }
+
+                    inputs.Add(NamedOnnxValue.CreateFromTensor(_attenLimInputName, attenTensor));
+                }
+
+                using var results = _session!.Run(inputs);
+
+                DisposableNamedOnnxValue? audioResult = null;
+                DisposableNamedOnnxValue? stateResult = null;
+
+                foreach (var r in results)
+                {
+                    if (r.Name == _statesOutputName || r.Name.Contains("state", StringComparison.OrdinalIgnoreCase))
+                        stateResult = r;
+                    else if (audioResult == null)
+                        audioResult = r;
+                }
+
+                if (stateResult != null)
+                {
+                    var newStates = stateResult.AsTensor<float>();
+                    _rnnStateTensor = new DenseTensor<float>(newStates.ToArray(), newStates.Dimensions.ToArray());
+                }
+
+                if (audioResult != null)
+                {
+                    var outAudio = audioResult.AsTensor<float>();
+                    int idx = 0;
+
+                    foreach (var val in outAudio)
+                    {
+                        if (idx < ChunkSize)
+                        {
+                            float original = floatChunk[idx];
+                            float denoised = val;
+                            float mixed = (original * (1.0f - strength)) + (denoised * strength);
+
+                            pcmBuffer[offset + idx] = (short)Math.Clamp((int)(mixed * 32768.0f), short.MinValue, short.MaxValue);
+                            idx++;
+                        }
+                        else
+                        {
+                            break;
+                        }
+                    }
                 }
             }
         }
-
-        if (inverse)
+        catch (Exception ex)
         {
-            for (int i = 0; i < n; i++)
-            {
-                real[i] /= n;
-                imag[i] /= n;
-            }
+            System.Diagnostics.Debug.WriteLine($"[ONNX RNN Execution Error] {ex.Message}");
+            _hasModel = false;
+            ProcessWithNeuralGain(pcmBuffer, sampleCount);
         }
+    }
+
+    private void ProcessWithNeuralGain(short[] pcmBuffer, int sampleCount)
+    {
+        float attack = 0.12f;
+        float release = 0.005f;
+        float strength = SuppressionStrength;
+        float threshold = 400f + (strength * 700f);
+        float floor = Math.Max(0.02f, 1.0f - (strength * 0.95f));
+
+        for (int i = 0; i < sampleCount; i++)
+        {
+            float input = pcmBuffer[i];
+
+            float filtered = (_b0 * input) + (_b1 * _x1) + (_b2 * _x2) - (_a1 * _y1) - (_a2 * _y2);
+            _x2 = _x1;
+            _x1 = input;
+            _y2 = _y1;
+            _y1 = filtered;
+
+            float abs = Math.Abs(filtered);
+            if (abs > _envelope)
+                _envelope += attack * (abs - _envelope);
+            else
+                _envelope += release * (abs - _envelope);
+
+            float targetGain = 1.0f;
+            if (_envelope < threshold)
+            {
+                float factor = _envelope / Math.Max(threshold, 1f);
+                targetGain = floor + ((1.0f - floor) * factor * factor);
+            }
+
+            _currentGain += 0.08f * (targetGain - _currentGain);
+
+            float outSample = filtered * _currentGain;
+            pcmBuffer[i] = (short)Math.Clamp((int)outSample, short.MinValue, short.MaxValue);
+        }
+    }
+
+    public void Dispose()
+    {
+        _session?.Dispose();
     }
 }

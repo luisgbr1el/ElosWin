@@ -26,7 +26,7 @@ public class WasapiAudioService : IAudioService
     private readonly IOpusEncoder _encoder;
     private readonly ConcurrentDictionary<string, IOpusDecoder> _peerDecoders = new();
     private readonly ConcurrentDictionary<string, bool> _peerBuffered = new();
-    private readonly SpectralNoiseSuppressor _spectralFilter = new();
+    private readonly SpectralNoiseSuppressor _noiseFilter = new();
 
     private readonly byte[] _inputAccumulator = new byte[FrameBytes * 8];
     private int _inputAccumulatorOffset = 0;
@@ -35,11 +35,6 @@ public class WasapiAudioService : IAudioService
     private Action<byte[], int>? _onFrameCaptured;
     private bool _isLoopbackMode = false;
     private long _lastVadDispatchTicks = 0;
-
-    private float _hpPrevInput = 0f;
-    private float _hpPrevOutput = 0f;
-    private float _gateGain = 1.0f;
-    private int _gateHoldFrames = 0;
 
     public bool IsRunning { get; private set; }
     public bool IsMuted { get; set; } = false;
@@ -50,8 +45,8 @@ public class WasapiAudioService : IAudioService
 
     public float NoiseSuppressionStrength
     {
-        get => _spectralFilter.SuppressionStrength;
-        set => _spectralFilter.SuppressionStrength = Math.Clamp(value, 0.0f, 1.0f);
+        get => _noiseFilter.SuppressionStrength;
+        set => _noiseFilter.SuppressionStrength = Math.Clamp(value, 0.0f, 1.0f);
     }
 
     public float GateSensitivity { get; set; } = 0.4f;
@@ -131,7 +126,6 @@ public class WasapiAudioService : IAudioService
         byte[] pcmBytes = new byte[decodedSamples * sizeof(short)];
         Buffer.BlockCopy(decodedPcm, 0, pcmBytes, 0, pcmBytes.Length);
 
-        // Pre-buffering de 2 frames (40ms) no início do fluxo para amortecer o jitter da VPN
         if (!_peerBuffered.ContainsKey(senderKey))
         {
             _peerBuffered.TryAdd(senderKey, true);
@@ -147,10 +141,6 @@ public class WasapiAudioService : IAudioService
         if (IsRunning) return;
 
         _inputAccumulatorOffset = 0;
-        _gateGain = 1.0f;
-        _gateHoldFrames = 0;
-        _hpPrevInput = 0f;
-        _hpPrevOutput = 0f;
         _peerDecoders.Clear();
         _peerBuffered.Clear();
 
@@ -165,11 +155,8 @@ public class WasapiAudioService : IAudioService
 
         MMDevice? selectedOutDevice = null;
         if (!string.IsNullOrEmpty(outputDeviceId))
-        {
             try { selectedOutDevice = enumerator.GetDevice(outputDeviceId); } catch { }
-        }
 
-        // 60ms de latência no driver WASAPI: amortecimento perfeito para VPNs sem atraso perceptível
         _output = selectedOutDevice != null
             ? new WasapiOut(selectedOutDevice, AudioClientShareMode.Shared, true, 60)
             : new WasapiOut(AudioClientShareMode.Shared, 60);
@@ -178,9 +165,7 @@ public class WasapiAudioService : IAudioService
 
         MMDevice? selectedInDevice = null;
         if (!string.IsNullOrEmpty(inputDeviceId))
-        {
             try { selectedInDevice = enumerator.GetDevice(inputDeviceId); } catch { }
-        }
 
         _capture = selectedInDevice != null
             ? new WasapiCapture(selectedInDevice)
@@ -208,9 +193,7 @@ public class WasapiAudioService : IAudioService
                 _inputAccumulatorOffset += e.BytesRecorded;
             }
             else
-            {
                 _inputAccumulatorOffset = 0;
-            }
 
             while (_inputAccumulatorOffset >= FrameBytes)
             {
@@ -219,49 +202,17 @@ public class WasapiAudioService : IAudioService
 
                 _inputAccumulatorOffset -= FrameBytes;
                 if (_inputAccumulatorOffset > 0)
-                {
                     Buffer.BlockCopy(_inputAccumulator, FrameBytes, _inputAccumulator, 0, _inputAccumulatorOffset);
-                }
 
-                // 1. Filtro Passa-Altas (~85Hz)
-                float hpAlpha = 0.988f;
-                double sumSquare = 0;
-
-                for (int i = 0; i < pcmBuffer.Length; i++)
-                {
-                    float current = pcmBuffer[i];
-                    float filtered = hpAlpha * (_hpPrevOutput + current - _hpPrevInput);
-                    _hpPrevInput = current;
-                    _hpPrevOutput = filtered;
-                    pcmBuffer[i] = (short)Math.Clamp((int)filtered, short.MinValue, short.MaxValue);
-
-                    sumSquare += pcmBuffer[i] * pcmBuffer[i];
-                }
-
-                double rms = Math.Sqrt(sumSquare / pcmBuffer.Length);
-                bool isSpeech = rms > (250.0 + (GateSensitivity * 600.0));
-
-                if (isSpeech) _gateHoldFrames = 12;
-                else if (_gateHoldFrames > 0) _gateHoldFrames--;
-
-                bool active = isSpeech || _gateHoldFrames > 0;
-
-                // 2. Subtração Espectral
                 if (EnableNoiseSuppression)
-                {
-                    _spectralFilter.Process(pcmBuffer, FrameSize, active);
-                }
+                    _noiseFilter.Process(pcmBuffer, FrameSize, true);
 
-                // 3. Aplicação do Ganho
-                float targetGain = (EnableNoiseSuppression && !active) ? 0.0f : 1.0f;
-                float gainStep = (targetGain - _gateGain) / pcmBuffer.Length;
                 float inVol = InputVolumeMultiplier;
                 float maxSample = 0f;
 
                 for (int i = 0; i < pcmBuffer.Length; i++)
                 {
-                    _gateGain += gainStep;
-                    float finalSample = pcmBuffer[i] * inVol * _gateGain;
+                    float finalSample = pcmBuffer[i] * inVol;
                     short clamped = (short)Math.Clamp((int)finalSample, short.MinValue, short.MaxValue);
                     pcmBuffer[i] = clamped;
 
@@ -269,9 +220,6 @@ public class WasapiAudioService : IAudioService
                     if (abs > maxSample) maxSample = abs;
                 }
 
-                _gateGain = targetGain;
-
-                // 4. VAD para a Interface
                 long nowTicks = Stopwatch.GetTimestamp();
                 if ((nowTicks - _lastVadDispatchTicks) > (Stopwatch.Frequency / 40))
                 {
@@ -281,9 +229,7 @@ public class WasapiAudioService : IAudioService
                 }
 
                 if (IsMuted || IsDeafened)
-                {
                     Array.Clear(pcmBuffer, 0, pcmBuffer.Length);
-                }
 
                 byte[] opusPacket = new byte[1275];
                 int encodedBytes = _encoder.Encode(pcmBuffer, FrameSize, opusPacket, opusPacket.Length);
@@ -298,9 +244,7 @@ public class WasapiAudioService : IAudioService
                     }
                 }
                 else
-                {
                     _onFrameCaptured?.Invoke(opusPacket, encodedBytes);
-                }
             }
         }
     }
@@ -327,7 +271,7 @@ public class WasapiAudioService : IAudioService
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"Erro ao parar áudio: {ex.Message}");
+            Debug.WriteLine($"Erro ao parar áudio: {ex.Message}");
         }
 
         IsRunning = false;
@@ -336,5 +280,6 @@ public class WasapiAudioService : IAudioService
     public void Dispose()
     {
         Stop();
+        _noiseFilter.Dispose();
     }
 }
