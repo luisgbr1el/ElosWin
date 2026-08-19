@@ -1,9 +1,9 @@
 ﻿using Concentus;
 using Concentus.Enums;
-using Concentus.Structs;
 using NAudio.CoreAudioApi;
 using NAudio.Wave;
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
@@ -15,8 +15,8 @@ namespace ElosWin.Services.Audio;
 public class WasapiAudioService : IAudioService
 {
     private const int SampleRate = 48000;
-    private const int Channels = 1; // Mono
-    private const int FrameSize = 960; // 20ms a 48kHz
+    private const int Channels = 1;
+    private const int FrameSize = 960;
     private const int FrameBytes = FrameSize * sizeof(short);
 
     private WasapiCapture? _capture;
@@ -24,7 +24,7 @@ public class WasapiAudioService : IAudioService
     private BufferedWaveProvider? _waveProvider;
 
     private readonly IOpusEncoder _encoder;
-    private readonly IOpusDecoder _decoder;
+    private readonly ConcurrentDictionary<string, IOpusDecoder> _peerDecoders = new();
     private readonly SpectralNoiseSuppressor _spectralFilter = new();
 
     private readonly byte[] _inputAccumulator = new byte[FrameBytes * 8];
@@ -35,13 +35,11 @@ public class WasapiAudioService : IAudioService
     private bool _isLoopbackMode = false;
     private long _lastVadDispatchTicks = 0;
 
-    // Gate e Filtro Passa-Altas
     private float _hpPrevInput = 0f;
     private float _hpPrevOutput = 0f;
     private float _gateGain = 1.0f;
     private int _gateHoldFrames = 0;
 
-    // Parâmetros de Áudio
     public bool IsRunning { get; private set; }
     public bool IsMuted { get; set; } = false;
     public bool IsDeafened { get; set; } = false;
@@ -64,8 +62,6 @@ public class WasapiAudioService : IAudioService
         _encoder = OpusCodecFactory.CreateEncoder(SampleRate, Channels, OpusApplication.OPUS_APPLICATION_VOIP);
         _encoder.Bitrate = 64000;
         _encoder.Complexity = 10;
-
-        _decoder = OpusCodecFactory.CreateDecoder(SampleRate, Channels);
     }
 
     public List<MMDevice> GetInputDevices()
@@ -96,11 +92,20 @@ public class WasapiAudioService : IAudioService
 
     public void PlayReceivedFrame(byte[] opusPacket)
     {
+        PlayReceivedFrameFromSender(opusPacket, "default_loopback");
+    }
+
+    public void PlayReceivedFrameFromSender(byte[] opusPacket, string senderKey)
+    {
         if (IsDeafened || _waveProvider == null) return;
+
+        var decoder = _peerDecoders.GetOrAdd(senderKey, _ => OpusCodecFactory.CreateDecoder(SampleRate, Channels));
 
         short[] decodedPcm = new short[FrameSize];
         ReadOnlySpan<byte> encodedSpan = new ReadOnlySpan<byte>(opusPacket);
-        int decodedSamples = _decoder.Decode(encodedSpan, decodedPcm, FrameSize, false);
+        int decodedSamples = decoder.Decode(encodedSpan, decodedPcm, FrameSize, false);
+
+        if (decodedSamples <= 0) return;
 
         float vol = OutputVolumeMultiplier;
         if (Math.Abs(vol - 1.0f) > 0.01f)
@@ -127,12 +132,14 @@ public class WasapiAudioService : IAudioService
         _gateHoldFrames = 0;
         _hpPrevInput = 0f;
         _hpPrevOutput = 0f;
+        _peerDecoders.Clear();
 
         var waveFormat = new WaveFormat(SampleRate, 16, Channels);
 
         _waveProvider = new BufferedWaveProvider(waveFormat)
         {
-            DiscardOnBufferOverflow = true
+            DiscardOnBufferOverflow = true,
+            BufferLength = FrameBytes * 25
         };
 
         var enumerator = new MMDeviceEnumerator();
@@ -143,9 +150,10 @@ public class WasapiAudioService : IAudioService
             try { selectedOutDevice = enumerator.GetDevice(outputDeviceId); } catch { }
         }
 
+        // Latência de 50ms no WASAPI para amortecer o jitter de rede sem atraso perceptível
         _output = selectedOutDevice != null
-            ? new WasapiOut(selectedOutDevice, AudioClientShareMode.Shared, true, 20)
-            : new WasapiOut(AudioClientShareMode.Shared, 20);
+            ? new WasapiOut(selectedOutDevice, AudioClientShareMode.Shared, true, 50)
+            : new WasapiOut(AudioClientShareMode.Shared, 50);
 
         _output.Init(_waveProvider);
 
@@ -196,7 +204,6 @@ public class WasapiAudioService : IAudioService
                     Buffer.BlockCopy(_inputAccumulator, FrameBytes, _inputAccumulator, 0, _inputAccumulatorOffset);
                 }
 
-                // 1. Filtro Passa-Altas (~85Hz) para remover vibrações/ar
                 float hpAlpha = 0.988f;
                 double sumSquare = 0;
 
@@ -214,18 +221,16 @@ public class WasapiAudioService : IAudioService
                 double rms = Math.Sqrt(sumSquare / pcmBuffer.Length);
                 bool isSpeech = rms > (250.0 + (GateSensitivity * 600.0));
 
-                if (isSpeech) _gateHoldFrames = 12; // ~240ms de hold
+                if (isSpeech) _gateHoldFrames = 12;
                 else if (_gateHoldFrames > 0) _gateHoldFrames--;
 
                 bool active = isSpeech || _gateHoldFrames > 0;
 
-                // 2. Subtração Espectral Contínua (Limpa o ventilador da voz)
                 if (EnableNoiseSuppression)
                 {
                     _spectralFilter.Process(pcmBuffer, FrameSize, active);
                 }
 
-                // 3. Aplicação do Ganho e Multiplicador de Entrada
                 float targetGain = (EnableNoiseSuppression && !active) ? 0.0f : 1.0f;
                 float gainStep = (targetGain - _gateGain) / pcmBuffer.Length;
                 float inVol = InputVolumeMultiplier;
@@ -244,7 +249,6 @@ public class WasapiAudioService : IAudioService
 
                 _gateGain = targetGain;
 
-                // 4. VAD para a Interface
                 long nowTicks = Stopwatch.GetTimestamp();
                 if ((nowTicks - _lastVadDispatchTicks) > (Stopwatch.Frequency / 40))
                 {
@@ -294,6 +298,8 @@ public class WasapiAudioService : IAudioService
 
             _waveProvider?.ClearBuffer();
             _waveProvider = null;
+
+            _peerDecoders.Clear();
         }
         catch (Exception ex)
         {

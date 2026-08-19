@@ -68,6 +68,14 @@ public partial class MainViewModel : ObservableObject
     public bool IsNotInCall => !IsInCall;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasParticipantsInCall))]
+    [NotifyPropertyChangedFor(nameof(NoParticipantsInCall))]
+    public partial int ParticipantsCount { get; set; } = 0;
+
+    public bool HasParticipantsInCall => ParticipantsCount > 0;
+    public bool NoParticipantsInCall => ParticipantsCount == 0;
+
+    [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(MuteGlyph))]
     public partial bool IsMuted { get; set; } = false;
 
@@ -152,10 +160,11 @@ public partial class MainViewModel : ObservableObject
             });
         };
 
-        // Recepção de áudio remoto de qualquer participante
+        // Recepção de áudio com identificação por Peer
         _udpClient.OnAudioPacketReceived += (opusPacket, senderEp) =>
         {
-            _audioService.PlayReceivedFrame(opusPacket);
+            string senderKey = senderEp.ToString();
+            _audioService.PlayReceivedFrameFromSender(opusPacket, senderKey);
 
             _dispatcherQueue.TryEnqueue(() =>
             {
@@ -169,25 +178,22 @@ public partial class MainViewModel : ObservableObject
             });
         };
 
-        // Quando alguém entra na chamada
         _discoveryService.OnPeerJoinedCall += (peer) =>
         {
             _dispatcherQueue.TryEnqueue(() =>
             {
-                if (IsInCall)
+                var existing = ConnectedParticipants.FirstOrDefault(p => !p.IsLocalUser && p.Equals(peer));
+                if (existing == null)
                 {
-                    var existing = ConnectedParticipants.FirstOrDefault(p => !p.IsLocalUser && p.Equals(peer));
-                    if (existing == null)
-                    {
-                        ConnectedParticipants.Add(peer);
+                    ConnectedParticipants.Add(peer);
+                    if (IsInCall)
                         _udpClient.AddTarget(peer.IpAddress, peer.AudioPort);
-                    }
-                    UpdateCallStatusMessage();
                 }
+                ParticipantsCount = ConnectedParticipants.Count;
+                UpdateCallStatusMessage();
             });
         };
 
-        // Quando alguém sai da chamada
         _discoveryService.OnPeerLeftCall += (peer) =>
         {
             _dispatcherQueue.TryEnqueue(() =>
@@ -196,34 +202,20 @@ public partial class MainViewModel : ObservableObject
                 if (existing != null)
                 {
                     ConnectedParticipants.Remove(existing);
-                    _udpClient.RemoveTarget(peer.IpAddress, peer.AudioPort);
+                    if (IsInCall)
+                        _udpClient.RemoveTarget(peer.IpAddress, peer.AudioPort);
                 }
+                ParticipantsCount = ConnectedParticipants.Count;
                 UpdateCallStatusMessage();
             });
         };
 
-        // Atualização de estado da chamada na rede
         _discoveryService.OnCallStateUpdated += (peersInCallCount) =>
         {
             _dispatcherQueue.TryEnqueue(() =>
             {
-                if (!IsInCall)
-                {
-                    if (peersInCallCount > 0)
-                    {
-                        StatusText = $"Chamada ativa ({peersInCallCount} na sala)";
-                        MainActionButtonText = "Entrar na chamada";
-                    }
-                    else
-                    {
-                        StatusText = "Nenhuma chamada na rede";
-                        MainActionButtonText = "Iniciar chamada";
-                    }
-                }
-                else
-                {
-                    UpdateCallStatusMessage();
-                }
+                ParticipantsCount = ConnectedParticipants.Count;
+                UpdateCallStatusMessage();
             });
         };
 
@@ -237,8 +229,25 @@ public partial class MainViewModel : ObservableObject
 
     private void UpdateCallStatusMessage()
     {
-        int total = ConnectedParticipants.Count;
-        StatusText = total > 1 ? $"Em chamada ({total} participantes)" : "Em chamada (Aguardando outros entrarem...)";
+        if (!IsInCall)
+        {
+            int others = ConnectedParticipants.Count(p => !p.IsLocalUser);
+            if (others > 0)
+            {
+                StatusText = $"Chamada ativa ({others} na sala)";
+                MainActionButtonText = "Entrar na chamada";
+            }
+            else
+            {
+                StatusText = "Nenhuma chamada na rede";
+                MainActionButtonText = "Iniciar chamada";
+            }
+        }
+        else
+        {
+            int total = ConnectedParticipants.Count;
+            StatusText = total > 1 ? $"Em chamada ({total} participantes)" : "Em chamada (Aguardando outros entrarem...)";
+        }
     }
 
     private void StartVadDecayLoop()
@@ -439,34 +448,32 @@ public partial class MainViewModel : ObservableObject
                 _udpClient.SendAudioFrame(packet, length);
             }, SelectedMicrophone?.ID, SelectedOutputDevice?.ID);
 
-            // Avisa o discovery que entramos
             _discoveryService.IsInCall = true;
 
-            ConnectedParticipants.Clear();
-
-            // 1. Adiciona o usuário local
-            ConnectedParticipants.Add(new PeerInfo
+            // Insere o próprio usuário no topo
+            if (!ConnectedParticipants.Any(p => p.IsLocalUser))
             {
-                Username = Username,
-                IsLocalUser = true,
-                AudioPort = localP,
-                IpAddress = "127.0.0.1"
-            });
+                ConnectedParticipants.Insert(0, new PeerInfo
+                {
+                    Username = Username,
+                    IsLocalUser = true,
+                    AudioPort = localP,
+                    IpAddress = "127.0.0.1"
+                });
+            }
 
-            // 2. Importa imediatamente os amigos que já estavam na chamada
-            var existingPeers = _discoveryService.GetKnownPeersInCall();
-            foreach (var peer in existingPeers)
+            // Registra todos os peers da sala no cliente UDP
+            foreach (var peer in ConnectedParticipants.Where(p => !p.IsLocalUser))
             {
-                ConnectedParticipants.Add(peer);
                 _udpClient.AddTarget(peer.IpAddress, peer.AudioPort);
             }
 
-            // 3. Força anúncio imediato para quem já estava na chamada adicionar você de volta
             _discoveryService.BroadcastImmediateState();
 
             StartVadDecayLoop();
 
             IsInCall = true;
+            ParticipantsCount = ConnectedParticipants.Count;
             UpdateCallStatusMessage();
         }
         catch (Exception ex)
@@ -487,11 +494,13 @@ public partial class MainViewModel : ObservableObject
         _discoveryService.IsInCall = false;
         _discoveryService.BroadcastImmediateState();
 
-        ConnectedParticipants.Clear();
+        var localUser = ConnectedParticipants.FirstOrDefault(p => p.IsLocalUser);
+        if (localUser != null)
+            ConnectedParticipants.Remove(localUser);
 
         IsInCall = false;
-        StatusText = "Nenhuma chamada na rede";
-        MainActionButtonText = "Iniciar chamada";
+        ParticipantsCount = ConnectedParticipants.Count;
+        UpdateCallStatusMessage();
         VoiceLevel = 0;
     }
 }
