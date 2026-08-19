@@ -113,11 +113,47 @@ public class ScreenCaptureService : IDisposable
             try
             {
                 _systemAudioCapture = new WasapiLoopbackCapture();
+                var waveFormat = _systemAudioCapture.WaveFormat;
+                bool isFloat = waveFormat.Encoding == WaveFormatEncoding.IeeeFloat || waveFormat.BitsPerSample == 32;
+                int channels = waveFormat.Channels;
+
                 _systemAudioCapture.DataAvailable += (s, a) =>
                 {
-                    if (a.BytesRecorded > 0)
-                        onAudioDataReady(a.Buffer, a.BytesRecorded);
+                    if (a.BytesRecorded == 0) return;
+
+                    byte[] pcm16Data;
+
+                    if (isFloat)
+                    {
+                        int floatCount = a.BytesRecorded / 4;
+                        int targetSampleCount = (channels == 1) ? floatCount * 2 : floatCount;
+                        pcm16Data = new byte[targetSampleCount * sizeof(short)];
+
+                        int pcmIdx = 0;
+                        for (int i = 0; i < a.BytesRecorded; i += 4)
+                        {
+                            float sample = BitConverter.ToSingle(a.Buffer, i);
+                            short sample16 = (short)Math.Clamp((int)(sample * 32767f), short.MinValue, short.MaxValue);
+
+                            pcm16Data[pcmIdx++] = (byte)(sample16 & 0xFF);
+                            pcm16Data[pcmIdx++] = (byte)((sample16 >> 8) & 0xFF);
+
+                            if (channels == 1)
+                            {
+                                pcm16Data[pcmIdx++] = (byte)(sample16 & 0xFF);
+                                pcm16Data[pcmIdx++] = (byte)((sample16 >> 8) & 0xFF);
+                            }
+                        }
+                    }
+                    else
+                    {
+                        pcm16Data = new byte[a.BytesRecorded];
+                        System.Buffer.BlockCopy(a.Buffer, 0, pcm16Data, 0, a.BytesRecorded);
+                    }
+
+                    onAudioDataReady(pcm16Data, pcm16Data.Length);
                 };
+
                 _systemAudioCapture.StartRecording();
             }
             catch (Exception ex)
@@ -140,7 +176,9 @@ public class ScreenCaptureService : IDisposable
 
                 byte[]? frameData = CaptureTargetToJpeg(target, quality.Width, quality.Height, jpgEncoder, encParams);
                 if (frameData != null && frameData.Length > 0)
+                {
                     onVideoChunkReady(frameData);
+                }
 
                 int elapsed = (int)(DateTime.UtcNow - start).TotalMilliseconds;
                 int sleep = Math.Max(1, targetDelay - elapsed);
@@ -149,7 +187,7 @@ public class ScreenCaptureService : IDisposable
         }, token);
     }
 
-    private byte[]? CaptureTargetToJpeg(CaptureTargetItem target, int targetW, int targetH, ImageCodecInfo? encoder, EncoderParameters encParams)
+    private byte[]? CaptureTargetToJpeg(CaptureTargetItem target, int maxW, int maxH, ImageCodecInfo? encoder, EncoderParameters encParams)
     {
         try
         {
@@ -184,6 +222,13 @@ public class ScreenCaptureService : IDisposable
 
             using (capturedBmp)
             {
+                float ratioX = (float)maxW / capturedBmp.Width;
+                float ratioY = (float)maxH / capturedBmp.Height;
+                float ratio = Math.Min(ratioX, ratioY);
+
+                int targetW = Math.Max(1, (int)(capturedBmp.Width * ratio));
+                int targetH = Math.Max(1, (int)(capturedBmp.Height * ratio));
+
                 using var resized = new Bitmap(targetW, targetH);
                 using (var g = Graphics.FromImage(resized))
                 {

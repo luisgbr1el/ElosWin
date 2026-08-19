@@ -24,6 +24,12 @@ namespace ElosWin.ViewModels;
 
 public partial class MainViewModel : ObservableObject
 {
+    private const int ScreenAudioSampleRate = 48000;
+    private const int ScreenAudioChannels = 2;
+    private const int ScreenAudioFrameSizePerChannel = 960;
+    private const int ScreenAudioTotalSamples = ScreenAudioFrameSizePerChannel * ScreenAudioChannels;
+    private const int ScreenAudioFrameBytes = ScreenAudioTotalSamples * sizeof(short);
+
     private readonly IAudioService _audioService;
     private readonly UdpVoiceClient _udpClient;
     private readonly PeerDiscoveryService _discoveryService;
@@ -33,7 +39,9 @@ public partial class MainViewModel : ObservableObject
     private readonly DispatcherQueue _dispatcherQueue;
 
     private readonly IOpusEncoder _screenAudioEncoder;
-    private readonly IOpusDecoder _screenAudioDecoder;
+    private readonly object _screenAudioLock = new();
+    private readonly byte[] _screenAudioAccumulator = new byte[ScreenAudioFrameBytes * 8];
+    private int _screenAudioAccumulatorOffset = 0;
 
     private CancellationTokenSource? _vadDecayCts;
 
@@ -183,8 +191,8 @@ public partial class MainViewModel : ObservableObject
         _screenCaptureService = new ScreenCaptureService();
         _screenNetworkService = new ScreenNetworkService();
 
-        _screenAudioEncoder = OpusCodecFactory.CreateEncoder(48000, 2, OpusApplication.OPUS_APPLICATION_AUDIO);
-        _screenAudioDecoder = OpusCodecFactory.CreateDecoder(48000, 2);
+        _screenAudioEncoder = OpusCodecFactory.CreateEncoder(ScreenAudioSampleRate, ScreenAudioChannels, OpusApplication.OPUS_APPLICATION_AUDIO);
+        _screenAudioEncoder.Bitrate = 128000;
 
         SelectedQuality = AvailableQualities[0];
 
@@ -378,6 +386,11 @@ public partial class MainViewModel : ObservableObject
     {
         if (!IsInCall || SelectedCaptureTarget == null) return;
 
+        lock (_screenAudioLock)
+        {
+            _screenAudioAccumulatorOffset = 0;
+        }
+
         IsSharingScreenLocal = true;
         _discoveryService.CurrentState = UserState.SharingScreen;
         _discoveryService.BroadcastImmediateState();
@@ -393,30 +406,69 @@ public partial class MainViewModel : ObservableObject
             ShareScreenAudio,
             (frameData) =>
             {
-                _screenNetworkService.BroadcastVideoFrame(frameData);
+                if (IsSharingScreenLocal)
+                {
+                    _screenNetworkService.BroadcastVideoFrame(frameData);
+                }
             },
             (audioData, bytesRecorded) =>
             {
-                try
+                if (!IsSharingScreenLocal || bytesRecorded <= 0) return;
+
+                lock (_screenAudioLock)
                 {
-                    short[] pcm = new short[bytesRecorded / 2];
-                    System.Buffer.BlockCopy(audioData, 0, pcm, 0, bytesRecorded);
-                    byte[] opus = new byte[1275];
-                    int encoded = _screenAudioEncoder.Encode(pcm, pcm.Length / 2, opus, opus.Length);
-                    if (encoded > 0)
+                    if (!IsSharingScreenLocal) return;
+
+                    if (_screenAudioAccumulatorOffset + bytesRecorded <= _screenAudioAccumulator.Length)
                     {
-                        _screenNetworkService.BroadcastScreenAudio(opus, encoded);
+                        System.Buffer.BlockCopy(audioData, 0, _screenAudioAccumulator, _screenAudioAccumulatorOffset, bytesRecorded);
+                        _screenAudioAccumulatorOffset += bytesRecorded;
+                    }
+                    else
+                    {
+                        _screenAudioAccumulatorOffset = 0;
+                    }
+
+                    while (_screenAudioAccumulatorOffset >= ScreenAudioFrameBytes)
+                    {
+                        short[] pcm = new short[ScreenAudioTotalSamples];
+                        System.Buffer.BlockCopy(_screenAudioAccumulator, 0, pcm, 0, ScreenAudioFrameBytes);
+
+                        _screenAudioAccumulatorOffset -= ScreenAudioFrameBytes;
+                        if (_screenAudioAccumulatorOffset > 0)
+                        {
+                            System.Buffer.BlockCopy(_screenAudioAccumulator, ScreenAudioFrameBytes, _screenAudioAccumulator, 0, _screenAudioAccumulatorOffset);
+                        }
+
+                        try
+                        {
+                            byte[] opus = new byte[1275];
+                            int encoded = _screenAudioEncoder.Encode(pcm, ScreenAudioFrameSizePerChannel, opus, opus.Length);
+                            if (encoded > 0)
+                            {
+                                _screenNetworkService.BroadcastScreenAudio(opus, encoded);
+                            }
+                        }
+                        catch
+                        {
+                            break;
+                        }
                     }
                 }
-                catch { }
             }
         );
     }
 
     private void StopScreenSharingInternal()
     {
-        _screenCaptureService.StopCapture();
         IsSharingScreenLocal = false;
+
+        lock (_screenAudioLock)
+        {
+            _screenAudioAccumulatorOffset = 0;
+        }
+
+        _screenCaptureService.StopCapture();
 
         if (IsInCall)
         {

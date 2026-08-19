@@ -112,11 +112,11 @@
                                         <Button.Flyout>
                                             <Flyout Placement="BottomEdgeAlignedRight">
                                                 <StackPanel Width="220" Spacing="12" Padding="4">
-                                                    <TextBlock Text="Opções da Transmissão" FontWeight="SemiBold" FontSize="13"/>
+                                                    <TextBlock Text="Opções da transmissão" FontWeight="SemiBold" FontSize="13"/>
 
                                                     <StackPanel Spacing="6">
                                                         <Grid ColumnDefinitions="*, Auto">
-                                                            <TextBlock Text="Volume do stream" FontSize="12" Opacity="0.8"/>
+                                                            <TextBlock Text="Volume" FontSize="12" Opacity="0.8"/>
                                                             <TextBlock Grid.Column="1" Text="{x:Bind ViewModel.StreamVolumeText, Mode=OneWay}" FontSize="12" FontWeight="SemiBold"/>
                                                         </Grid>
                                                         <Slider Value="{x:Bind ViewModel.StreamVolume, Mode=TwoWay}"
