@@ -89,12 +89,12 @@ public class WasapiAudioService : IAudioService
 
     public void PlayReceivedFrame(byte[] opusPacket)
     {
-        PlayReceivedFrameFromSender(opusPacket, "default_loopback");
+        PlayReceivedFrameFromSender(opusPacket, "default_loopback", 1.0f);
     }
 
-    public void PlayReceivedFrameFromSender(byte[] opusPacket, string senderKey)
+    public float PlayReceivedFrameFromSender(byte[] opusPacket, string senderKey, float individualVolume = 1.0f)
     {
-        if (IsDeafened || _waveProvider == null) return;
+        if (IsDeafened || _waveProvider == null) return 0f;
 
         var decoder = _peerDecoders.GetOrAdd(senderKey, _ => OpusCodecFactory.CreateDecoder(SampleRate, Channels));
 
@@ -111,16 +111,19 @@ public class WasapiAudioService : IAudioService
             decodedSamples = decoder.Decode(ReadOnlySpan<byte>.Empty, decodedPcm, FrameSize, false);
         }
 
-        if (decodedSamples <= 0) return;
+        if (decodedSamples <= 0) return 0f;
 
-        float vol = OutputVolumeMultiplier;
-        if (Math.Abs(vol - 1.0f) > 0.01f)
+        float effectiveVol = OutputVolumeMultiplier * individualVolume;
+        float maxSample = 0f;
+
+        for (int i = 0; i < decodedSamples; i++)
         {
-            for (int i = 0; i < decodedSamples; i++)
-            {
-                int sample = (int)(decodedPcm[i] * vol);
-                decodedPcm[i] = (short)Math.Clamp(sample, short.MinValue, short.MaxValue);
-            }
+            float processed = decodedPcm[i] * effectiveVol;
+            short clamped = (short)Math.Clamp((int)processed, short.MinValue, short.MaxValue);
+            decodedPcm[i] = clamped;
+
+            float abs = Math.Abs(clamped);
+            if (abs > maxSample) maxSample = abs;
         }
 
         byte[] pcmBytes = new byte[decodedSamples * sizeof(short)];
@@ -134,6 +137,8 @@ public class WasapiAudioService : IAudioService
         }
 
         _waveProvider.AddSamples(pcmBytes, 0, pcmBytes.Length);
+
+        return maxSample / 32768f;
     }
 
     private void InitWasapi(string? inputDeviceId, string? outputDeviceId)

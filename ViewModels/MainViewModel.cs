@@ -173,16 +173,18 @@ public partial class MainViewModel : ObservableObject
                 return;
 
             string senderKey = senderEp.ToString();
-            _audioService.PlayReceivedFrameFromSender(opusPacket, senderKey);
+            float peerVol = (remotePeer != null) ? (float)(remotePeer.UserVolume / 100.0) : 1.0f;
 
-            _dispatcherQueue.TryEnqueue(() =>
+            float level = _audioService.PlayReceivedFrameFromSender(opusPacket, senderKey, peerVol);
+
+            if (level > 0.035f && remotePeer != null)
             {
-                if (remotePeer != null)
+                _dispatcherQueue.TryEnqueue(() =>
                 {
                     remotePeer.IsSpeaking = true;
                     remotePeer.LastSpokeTime = DateTime.Now;
-                }
-            });
+                });
+            }
         };
 
         _discoveryService.OnPeerJoinedCall += (peer) =>

@@ -9,7 +9,7 @@ public interface IAudioService : IDisposable
     void StartLoopback(string? inputDeviceId = null, string? outputDeviceId = null);
     void StartNetworkStream(Action<byte[], int> onFrameCaptured, string? inputDeviceId = null, string? outputDeviceId = null);
     void PlayReceivedFrame(byte[] opusPacket);
-    void PlayReceivedFrameFromSender(byte[] opusPacket, string senderKey);
+    float PlayReceivedFrameFromSender(byte[] opusPacket, string senderKey, float individualVolume = 1.0f);
     void Stop();
 
     bool IsRunning { get; }
