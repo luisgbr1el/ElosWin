@@ -365,7 +365,7 @@ public partial class MainViewModel : ObservableObject
         if (presenter != null)
         {
             HasActiveScreenStream = true;
-            ScreenStreamPresenterText = presenter.IsLocalUser ? "Você está transmitindo" : $"Transmitido por {presenter.Username}";
+            ScreenStreamPresenterText = presenter.IsLocalUser ? "Você está transmitindo" : $"{presenter.Username} está transmitindo";
         }
         else
         {

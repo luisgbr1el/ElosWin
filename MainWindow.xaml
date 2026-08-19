@@ -213,10 +213,10 @@
 
                                                                         <MenuFlyoutSeparator Margin="0"/>
 
-                                                                        <ToggleSwitch Header="Mutar voz para mim"
+                                                                        <ToggleSwitch Header="Silenciar"
                                                                                       IsOn="{x:Bind IsLocallyMuted, Mode=TwoWay}"
-                                                                                      OnContent="Mutado"
-                                                                                      OffContent="Ouvindo"/>
+                                                                                      OnContent="Sim"
+                                                                                      OffContent="Não"/>
                                                                     </StackPanel>
                                                                 </Flyout>
                                                             </Button.Flyout>
@@ -250,7 +250,7 @@
                                     HorizontalAlignment="Stretch"
                                     Height="46"
                                     CornerRadius="6"
-                                    ToolTipService.ToolTip="Mutar microfone">
+                                    ToolTipService.ToolTip="Silenciar">
                                 <FontIcon Glyph="{x:Bind ViewModel.MuteGlyph, Mode=OneWay}" FontSize="18"/>
                             </Button>
 
