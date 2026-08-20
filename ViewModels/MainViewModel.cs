@@ -25,10 +25,9 @@ namespace ElosWin.ViewModels;
 public partial class MainViewModel : ObservableObject
 {
     private const int ScreenAudioSampleRate = 48000;
-    private const int ScreenAudioChannels = 2;
-    private const int ScreenAudioFrameSizePerChannel = 960;
-    private const int ScreenAudioTotalSamples = ScreenAudioFrameSizePerChannel * ScreenAudioChannels;
-    private const int ScreenAudioFrameBytes = ScreenAudioTotalSamples * sizeof(short);
+    private const int ScreenAudioChannels = 1;
+    private const int ScreenAudioFrameSize = 960;
+    private const int ScreenAudioFrameBytes = ScreenAudioFrameSize * sizeof(short);
 
     private readonly IAudioService _audioService;
     private readonly UdpVoiceClient _udpClient;
@@ -40,7 +39,7 @@ public partial class MainViewModel : ObservableObject
 
     private readonly IOpusEncoder _screenAudioEncoder;
     private readonly object _screenAudioLock = new();
-    private readonly byte[] _screenAudioAccumulator = new byte[ScreenAudioFrameBytes * 8];
+    private readonly byte[] _screenAudioAccumulator = new byte[ScreenAudioFrameBytes * 4];
     private int _screenAudioAccumulatorOffset = 0;
 
     private CancellationTokenSource? _vadDecayCts;
@@ -192,7 +191,7 @@ public partial class MainViewModel : ObservableObject
         _screenNetworkService = new ScreenNetworkService();
 
         _screenAudioEncoder = OpusCodecFactory.CreateEncoder(ScreenAudioSampleRate, ScreenAudioChannels, OpusApplication.OPUS_APPLICATION_AUDIO);
-        _screenAudioEncoder.Bitrate = 128000;
+        _screenAudioEncoder.Bitrate = 96000;
 
         SelectedQuality = AvailableQualities[0];
 
@@ -431,7 +430,7 @@ public partial class MainViewModel : ObservableObject
 
                     while (_screenAudioAccumulatorOffset >= ScreenAudioFrameBytes)
                     {
-                        short[] pcm = new short[ScreenAudioTotalSamples];
+                        short[] pcm = new short[ScreenAudioFrameSize];
                         System.Buffer.BlockCopy(_screenAudioAccumulator, 0, pcm, 0, ScreenAudioFrameBytes);
 
                         _screenAudioAccumulatorOffset -= ScreenAudioFrameBytes;
@@ -443,7 +442,7 @@ public partial class MainViewModel : ObservableObject
                         try
                         {
                             byte[] opus = new byte[1275];
-                            int encoded = _screenAudioEncoder.Encode(pcm, ScreenAudioFrameSizePerChannel, opus, opus.Length);
+                            int encoded = _screenAudioEncoder.Encode(pcm, ScreenAudioFrameSize, opus, opus.Length);
                             if (encoded > 0)
                             {
                                 _screenNetworkService.BroadcastScreenAudio(opus, encoded);

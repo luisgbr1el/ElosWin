@@ -88,6 +88,10 @@ public class UdpVoiceClient : IDisposable
                 if (result.RemoteEndPoint.Port == _currentLocalPort && IPAddress.IsLoopback(result.RemoteEndPoint.Address))
                     continue;
 
+                string remoteKey = $"{result.RemoteEndPoint.Address}:{result.RemoteEndPoint.Port}";
+                if (_callEndpoints.ContainsKey(remoteKey))
+                    continue;
+
                 OnAudioPacketReceived?.Invoke(result.Buffer, result.RemoteEndPoint);
             }
             catch (OperationCanceledException)

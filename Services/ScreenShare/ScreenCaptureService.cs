@@ -115,43 +115,39 @@ public class ScreenCaptureService : IDisposable
                 _systemAudioCapture = new WasapiLoopbackCapture();
                 var waveFormat = _systemAudioCapture.WaveFormat;
                 bool isFloat = waveFormat.Encoding == WaveFormatEncoding.IeeeFloat || waveFormat.BitsPerSample == 32;
-                int channels = waveFormat.Channels;
+                int srcChannels = Math.Max(1, waveFormat.Channels);
 
                 _systemAudioCapture.DataAvailable += (s, a) =>
                 {
                     if (a.BytesRecorded == 0) return;
 
-                    byte[] pcm16Data;
-
                     if (isFloat)
                     {
-                        int floatCount = a.BytesRecorded / 4;
-                        int targetSampleCount = (channels == 1) ? floatCount * 2 : floatCount;
-                        pcm16Data = new byte[targetSampleCount * sizeof(short)];
+                        int floatSamples = a.BytesRecorded / 4;
+                        int monoSamples = floatSamples / srcChannels;
+                        byte[] pcm16Data = new byte[monoSamples * sizeof(short)];
 
                         int pcmIdx = 0;
-                        for (int i = 0; i < a.BytesRecorded; i += 4)
+                        for (int i = 0; i < a.BytesRecorded; i += (4 * srcChannels))
                         {
-                            float sample = BitConverter.ToSingle(a.Buffer, i);
-                            short sample16 = (short)Math.Clamp((int)(sample * 32767f), short.MinValue, short.MaxValue);
-
-                            pcm16Data[pcmIdx++] = (byte)(sample16 & 0xFF);
-                            pcm16Data[pcmIdx++] = (byte)((sample16 >> 8) & 0xFF);
-
-                            if (channels == 1)
+                            float mixedSample = 0f;
+                            for (int ch = 0; ch < srcChannels; ch++)
                             {
-                                pcm16Data[pcmIdx++] = (byte)(sample16 & 0xFF);
-                                pcm16Data[pcmIdx++] = (byte)((sample16 >> 8) & 0xFF);
+                                int offset = i + (ch * 4);
+                                if (offset + 4 <= a.BytesRecorded)
+                                    mixedSample += BitConverter.ToSingle(a.Buffer, offset);
                             }
+                            mixedSample /= srcChannels;
+
+                            short s16 = (short)Math.Clamp((int)(mixedSample * 32767f), short.MinValue, short.MaxValue);
+                            pcm16Data[pcmIdx++] = (byte)(s16 & 0xFF);
+                            pcm16Data[pcmIdx++] = (byte)((s16 >> 8) & 0xFF);
                         }
+
+                        onAudioDataReady(pcm16Data, pcm16Data.Length);
                     }
                     else
-                    {
-                        pcm16Data = new byte[a.BytesRecorded];
-                        System.Buffer.BlockCopy(a.Buffer, 0, pcm16Data, 0, a.BytesRecorded);
-                    }
-
-                    onAudioDataReady(pcm16Data, pcm16Data.Length);
+                        onAudioDataReady(a.Buffer, a.BytesRecorded);
                 };
 
                 _systemAudioCapture.StartRecording();

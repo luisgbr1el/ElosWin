@@ -25,10 +25,9 @@ public class WasapiAudioService : IAudioService
 
     private readonly IOpusEncoder _encoder;
     private readonly ConcurrentDictionary<string, IOpusDecoder> _peerDecoders = new();
-    private readonly ConcurrentDictionary<string, bool> _peerBuffered = new();
     private readonly SpectralNoiseSuppressor _noiseFilter = new();
 
-    private readonly byte[] _inputAccumulator = new byte[FrameBytes * 8];
+    private readonly byte[] _inputAccumulator = new byte[FrameBytes * 4];
     private int _inputAccumulatorOffset = 0;
     private readonly object _audioLock = new();
 
@@ -96,6 +95,9 @@ public class WasapiAudioService : IAudioService
     {
         if (IsDeafened || _waveProvider == null) return 0f;
 
+        if (_waveProvider.BufferedBytes > FrameBytes * 4)
+            _waveProvider.ClearBuffer();
+
         var decoder = _peerDecoders.GetOrAdd(senderKey, _ => OpusCodecFactory.CreateDecoder(SampleRate, Channels));
 
         short[] decodedPcm = new short[FrameSize];
@@ -129,13 +131,6 @@ public class WasapiAudioService : IAudioService
         byte[] pcmBytes = new byte[decodedSamples * sizeof(short)];
         Buffer.BlockCopy(decodedPcm, 0, pcmBytes, 0, pcmBytes.Length);
 
-        if (!_peerBuffered.ContainsKey(senderKey))
-        {
-            _peerBuffered.TryAdd(senderKey, true);
-            byte[] silence = new byte[FrameBytes * 2];
-            _waveProvider.AddSamples(silence, 0, silence.Length);
-        }
-
         _waveProvider.AddSamples(pcmBytes, 0, pcmBytes.Length);
 
         return maxSample / 32768f;
@@ -147,7 +142,6 @@ public class WasapiAudioService : IAudioService
 
         _inputAccumulatorOffset = 0;
         _peerDecoders.Clear();
-        _peerBuffered.Clear();
 
         var waveFormat = new WaveFormat(SampleRate, 16, Channels);
 
@@ -163,8 +157,8 @@ public class WasapiAudioService : IAudioService
             try { selectedOutDevice = enumerator.GetDevice(outputDeviceId); } catch { }
 
         _output = selectedOutDevice != null
-            ? new WasapiOut(selectedOutDevice, AudioClientShareMode.Shared, true, 60)
-            : new WasapiOut(AudioClientShareMode.Shared, 60);
+            ? new WasapiOut(selectedOutDevice, AudioClientShareMode.Shared, true, 30)
+            : new WasapiOut(AudioClientShareMode.Shared, 30);
 
         _output.Init(_waveProvider);
 
@@ -272,7 +266,6 @@ public class WasapiAudioService : IAudioService
             _waveProvider = null;
 
             _peerDecoders.Clear();
-            _peerBuffered.Clear();
         }
         catch (Exception ex)
         {
