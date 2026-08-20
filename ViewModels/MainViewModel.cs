@@ -319,6 +319,8 @@ public partial class MainViewModel : ObservableObject
                     {
                         _udpClient.RemoveTarget(peer.IpAddress, peer.AudioPort);
                         _screenNetworkService.RemoveTarget(peer.IpAddress, peer.AudioPort + 100);
+                        string senderKey = $"{peer.IpAddress}:{peer.AudioPort}";
+                        _audioService.RemovePeerDecoder(senderKey);
                     }
                 }
                 ParticipantsCount = ConnectedParticipants.Count;
@@ -331,13 +333,12 @@ public partial class MainViewModel : ObservableObject
         {
             _dispatcherQueue.TryEnqueue(() =>
             {
-                if (peer.State == UserState.SharingScreen)
+                if (peer.State == UserState.SharingScreen && !peer.IsLocalUser)
                 {
                     if (IsSharingScreenLocal)
-                    {
                         StopScreenSharingInternal();
-                    }
                 }
+
                 CheckScreenStreamPresence();
             });
         };
@@ -406,9 +407,7 @@ public partial class MainViewModel : ObservableObject
             (frameData) =>
             {
                 if (IsSharingScreenLocal)
-                {
                     _screenNetworkService.BroadcastVideoFrame(frameData);
-                }
             },
             (audioData, bytesRecorded) =>
             {
@@ -424,9 +423,7 @@ public partial class MainViewModel : ObservableObject
                         _screenAudioAccumulatorOffset += bytesRecorded;
                     }
                     else
-                    {
                         _screenAudioAccumulatorOffset = 0;
-                    }
 
                     while (_screenAudioAccumulatorOffset >= ScreenAudioFrameBytes)
                     {
@@ -435,18 +432,14 @@ public partial class MainViewModel : ObservableObject
 
                         _screenAudioAccumulatorOffset -= ScreenAudioFrameBytes;
                         if (_screenAudioAccumulatorOffset > 0)
-                        {
                             System.Buffer.BlockCopy(_screenAudioAccumulator, ScreenAudioFrameBytes, _screenAudioAccumulator, 0, _screenAudioAccumulatorOffset);
-                        }
 
                         try
                         {
                             byte[] opus = new byte[1275];
                             int encoded = _screenAudioEncoder.Encode(pcm, ScreenAudioFrameSize, opus, opus.Length);
                             if (encoded > 0)
-                            {
                                 _screenNetworkService.BroadcastScreenAudio(opus, encoded);
-                            }
                         }
                         catch
                         {
@@ -763,6 +756,8 @@ public partial class MainViewModel : ObservableObject
         foreach (var p in ConnectedParticipants)
         {
             p.IsSpeaking = false;
+            string senderKey = $"{p.IpAddress}:{p.AudioPort}";
+            _audioService.RemovePeerDecoder(senderKey);
         }
 
         var localUser = ConnectedParticipants.FirstOrDefault(p => p.IsLocalUser);

@@ -16,7 +16,7 @@ namespace ElosWin.Services.Network;
 public class PeerDiscoveryService : IDisposable
 {
     private const int DiscoveryPort = 5555;
-    private const int PeerTimeoutSeconds = 6;
+    private const int PeerTimeoutSeconds = 15;
 
     private UdpClient? _udpClient;
     private CancellationTokenSource? _cts;
@@ -170,7 +170,8 @@ public class PeerDiscoveryService : IDisposable
                     catch { }
                 }
 
-                await Task.Delay(1000, token);
+                int delayMs = IsInCall ? 500 : 1000;
+                await Task.Delay(delayMs, token);
             }
             catch (OperationCanceledException)
             {
@@ -338,12 +339,20 @@ public class PeerDiscoveryService : IDisposable
     {
         if (!IsRunning) return;
 
+        var peersToNotify = _activePeers.Values.ToList();
+        _activePeers.Clear();
+
+        foreach (var peer in peersToNotify)
+        {
+            peer.State = UserState.Idle;
+            OnPeerLeftCall?.Invoke(peer);
+        }
+
         _cts?.Cancel();
         _udpClient?.Close();
         _udpClient?.Dispose();
         _cts = null;
         _udpClient = null;
-        _activePeers.Clear();
         IsRunning = false;
     }
 

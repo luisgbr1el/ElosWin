@@ -136,6 +136,11 @@ public class WasapiAudioService : IAudioService
         return maxSample / 32768f;
     }
 
+    public void RemovePeerDecoder(string senderKey)
+    {
+        _peerDecoders.TryRemove(senderKey, out _);
+    }
+
     private void InitWasapi(string? inputDeviceId, string? outputDeviceId)
     {
         if (IsRunning) return;

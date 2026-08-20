@@ -10,6 +10,7 @@ public interface IAudioService : IDisposable
     void StartNetworkStream(Action<byte[], int> onFrameCaptured, string? inputDeviceId = null, string? outputDeviceId = null);
     void PlayReceivedFrame(byte[] opusPacket);
     float PlayReceivedFrameFromSender(byte[] opusPacket, string senderKey, float individualVolume = 1.0f);
+    void RemovePeerDecoder(string senderKey);
     void Stop();
 
     bool IsRunning { get; }
