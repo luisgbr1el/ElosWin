@@ -95,14 +95,26 @@
                                 Padding="14"
                                 Visibility="{x:Bind ViewModel.HasActiveScreenStream, Mode=OneWay}">
                             <StackPanel Spacing="10">
-                                <Grid ColumnDefinitions="*, Auto">
+                                <Grid ColumnDefinitions="*, Auto, Auto">
                                     <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
                                         <FontIcon Glyph="&#xE7F4;" FontSize="15" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"/>
                                         <TextBlock Text="{x:Bind ViewModel.ScreenStreamPresenterText, Mode=OneWay}" FontWeight="SemiBold" FontSize="14"/>
                                     </StackPanel>
 
-                                    <!-- Menu de Opções da Transmissão (Três Pontinhos) -->
+                                    <!-- Botão Fullscreen (apenas para não-apresentadores) -->
                                     <Button Grid.Column="1"
+                                            Command="{x:Bind ViewModel.ToggleScreenShareFullscreenCommand}"
+                                            Visibility="{x:Bind ViewModel.CanShowScreenShareFullscreenButton, Mode=OneWay}"
+                                            Background="Transparent"
+                                            BorderThickness="0"
+                                            Padding="8,4"
+                                            VerticalAlignment="Center"
+                                            ToolTipService.ToolTip="Modo tela cheia">
+                                        <FontIcon Glyph="&#xE740;" FontSize="14"/>
+                                    </Button>
+
+                                    <!-- Menu de Opções da Transmissão (Três Pontinhos) -->
+                                    <Button Grid.Column="2"
                                             Background="Transparent"
                                             BorderThickness="0"
                                             Padding="8,4"
@@ -250,7 +262,7 @@
                                     HorizontalAlignment="Stretch"
                                     Height="46"
                                     CornerRadius="6"
-                                    ToolTipService.ToolTip="Silenciar">
+                                    ToolTipService.ToolTip="{x:Bind ViewModel.MuteToolTip, Mode=OneWay}">
                                 <FontIcon Glyph="{x:Bind ViewModel.MuteGlyph, Mode=OneWay}" FontSize="18"/>
                             </Button>
 
@@ -259,7 +271,7 @@
                                     HorizontalAlignment="Stretch"
                                     Height="46"
                                     CornerRadius="6"
-                                    ToolTipService.ToolTip="Desativar áudio">
+                                    ToolTipService.ToolTip="{x:Bind ViewModel.DeafenToolTip, Mode=OneWay}">
                                 <FontIcon Glyph="{x:Bind ViewModel.DeafenGlyph, Mode=OneWay}" FontSize="18"/>
                             </Button>
 
@@ -464,6 +476,103 @@
                 </Grid>
             </ScrollViewer>
         </NavigationView>
+
+        <!-- Overlay Fullscreen para Transmissão de Tela -->
+        <Grid x:Name="FullscreenOverlay"
+              Grid.Row="0"
+              Grid.RowSpan="2"
+              Background="#1A1A1A"
+              Visibility="{x:Bind ViewModel.IsScreenShareFullscreen, Mode=OneWay}">
+
+            <Grid.RowDefinitions>
+                <RowDefinition Height="*"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+
+            <!-- Área do Player de Vídeo em Fullscreen -->
+            <Border Grid.Row="0" Background="Black" HorizontalAlignment="Stretch" VerticalAlignment="Stretch">
+                <Image Source="{x:Bind ViewModel.RemoteScreenImage, Mode=OneWay}" Stretch="Uniform"/>
+            </Border>
+
+            <!-- Barra de Controles Fullscreen -->
+            <Border Grid.Row="1"
+                    Background="#2A2A2A"
+                    BorderThickness="0,1,0,0"
+                    BorderBrush="#404040"
+                    Padding="20">
+                <Grid ColumnDefinitions="Auto, Auto, Auto, Auto, Auto, *, Auto">
+
+                    <!-- Controle de Volume -->
+                    <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center" Width="180">
+                        <FontIcon Glyph="&#xE74D;" FontSize="14" Foreground="#E8E8E8"/>
+                        <Slider Value="{x:Bind ViewModel.StreamVolume, Mode=TwoWay}"
+                                Minimum="0"
+                                Maximum="200"
+                                StepFrequency="1"
+                                Width="120"
+                                VerticalAlignment="Center"/>
+                        <TextBlock Text="{x:Bind ViewModel.StreamVolumeText, Mode=OneWay}" 
+                                   FontSize="11" 
+                                   Foreground="#A8A8A8"
+                                   Width="30"
+                                   VerticalAlignment="Center"/>
+                    </StackPanel>
+
+                    <!-- Separador -->
+                    <Border Grid.Column="1" Width="1" Margin="12,0" Background="#404040"/>
+
+                    <!-- Botão Silenciar Microfone -->
+                    <Button Grid.Column="2"
+                            Command="{x:Bind ViewModel.ToggleMuteCommand}"
+                            Background="Transparent"
+                            BorderThickness="0"
+                            Padding="12,8"
+                            VerticalAlignment="Center"
+                            ToolTipService.ToolTip="{x:Bind ViewModel.MuteToolTip, Mode=OneWay}">
+                        <FontIcon Glyph="{x:Bind ViewModel.MuteGlyph, Mode=OneWay}" FontSize="14" Foreground="#E8E8E8"/>
+                    </Button>
+
+                    <!-- Botão Desativar Som -->
+                    <Button Grid.Column="3"
+                            Command="{x:Bind ViewModel.ToggleDeafenCommand}"
+                            Background="Transparent"
+                            BorderThickness="0"
+                            Padding="12,8"
+                            VerticalAlignment="Center"
+                            ToolTipService.ToolTip="{x:Bind ViewModel.DeafenToolTip, Mode=OneWay}">
+                        <FontIcon Glyph="{x:Bind ViewModel.DeafenGlyph, Mode=OneWay}" FontSize="14" Foreground="#E8E8E8"/>
+                    </Button>
+
+                    <!-- Botão Sair da Chamada -->
+                    <Button Grid.Column="4"
+                            Command="{x:Bind ViewModel.LeaveCallCommand}"
+                            Background="#DC2626"
+                            BorderThickness="0"
+                            Padding="12,8"
+                            VerticalAlignment="Center"
+                            ToolTipService.ToolTip="Sair da chamada">
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                            <FontIcon Glyph="&#xE711;" FontSize="14" Foreground="White"/>
+                            <TextBlock Text="Sair" Foreground="White" FontSize="12" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Button>
+
+                    <!-- Espaçador -->
+                    <Border Grid.Column="5"/>
+
+                    <!-- Botão Sair do Fullscreen -->
+                    <Button Grid.Column="6"
+                            Command="{x:Bind ViewModel.ToggleScreenShareFullscreenCommand}"
+                            Background="Transparent"
+                            BorderThickness="0"
+                            Padding="12,8"
+                            VerticalAlignment="Center"
+                            ToolTipService.ToolTip="Sair da visualização de tela cheia">
+                        <FontIcon Glyph="&#xE73F;" FontSize="14" Foreground="#E8E8E8"/>
+                    </Button>
+                </Grid>
+            </Border>
+        </Grid>
 
         <!-- Diálogo Estilo Discord para Seleção de Janela / Tela e Opções -->
         <ContentDialog x:Name="ScreenShareDialog"

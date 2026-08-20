@@ -97,16 +97,20 @@ public partial class MainViewModel : ObservableObject
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(MuteGlyph))]
+    [NotifyPropertyChangedFor(nameof(MuteToolTip))]
     public partial bool IsMuted { get; set; } = false;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(DeafenGlyph))]
+    [NotifyPropertyChangedFor(nameof(DeafenToolTip))]
     [NotifyPropertyChangedFor(nameof(CanToggleMute))]
     public partial bool IsDeafened { get; set; } = false;
 
     public bool CanToggleMute => !IsDeafened;
     public string MuteGlyph => IsMuted ? "\uF781" : "\uE720";
+    public string MuteToolTip => IsMuted ? "Ativar microfone" : "Silenciar microfone";
     public string DeafenGlyph => IsDeafened ? "\uE74F" : "\uE767";
+    public string DeafenToolTip => IsDeafened ? "Ativar som" : "Desativar som";
 
     // Nível de voz local
     [ObservableProperty]
@@ -134,6 +138,9 @@ public partial class MainViewModel : ObservableObject
     public partial bool HasActiveScreenStream { get; set; } = false;
 
     [ObservableProperty]
+    private bool _isScreenShareFullscreen;
+
+    [ObservableProperty]
     public partial string ScreenStreamPresenterText { get; set; } = "Transmissão de tela";
 
     [ObservableProperty]
@@ -147,6 +154,7 @@ public partial class MainViewModel : ObservableObject
 
     public string ScreenShareButtonGlyph => IsSharingScreenLocal ? "\uEA14" : "\uE7F4";
     public string ScreenShareButtonToolTip => IsSharingScreenLocal ? "Parar compartilhamento" : "Compartilhar tela";
+    public bool CanShowScreenShareFullscreenButton => HasActiveScreenStream && !IsSharingScreenLocal;
 
     // Opções de Modal/Configuração de Transmissão
     public ObservableCollection<CaptureTargetItem> AvailableCaptureTargets { get; } = new();
@@ -478,6 +486,14 @@ public partial class MainViewModel : ObservableObject
     public void StopScreenShare()
     {
         StopScreenSharingInternal();
+    }
+
+    [RelayCommand]
+    public void ToggleScreenShareFullscreen()
+    {
+        if (IsSharingScreenLocal) return;
+
+        IsScreenShareFullscreen = !IsScreenShareFullscreen;
     }
 
     private void UpdateCallStatusMessage()
