@@ -503,19 +503,31 @@
                 <Grid ColumnDefinitions="Auto, Auto, Auto, Auto, Auto, *, Auto">
 
                     <!-- Controle de Volume -->
-                    <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center" Width="180">
-                        <FontIcon Glyph="&#xE74D;" FontSize="14" Foreground="#E8E8E8"/>
-                        <Slider Value="{x:Bind ViewModel.StreamVolume, Mode=TwoWay}"
+                    <StackPanel Orientation="Vertical" Spacing="3" VerticalAlignment="Center" Width="180">
+                        <TextBlock Text="Volume" 
+                           FontSize="12" 
+                           Opacity="0.8" 
+                           HorizontalAlignment="Left"/>
+
+                        <Grid ColumnDefinitions="*, Auto" VerticalAlignment="Center">
+                            <Slider Grid.Column="0"
+                                Value="{x:Bind ViewModel.StreamVolume, Mode=TwoWay}"
                                 Minimum="0"
                                 Maximum="200"
                                 StepFrequency="1"
-                                Width="120"
+                                HorizontalAlignment="Stretch"
+                                Margin="0,0,8,0"
                                 VerticalAlignment="Center"/>
-                        <TextBlock Text="{x:Bind ViewModel.StreamVolumeText, Mode=OneWay}" 
-                                   FontSize="11" 
-                                   Foreground="#A8A8A8"
-                                   Width="30"
-                                   VerticalAlignment="Center"/>
+
+                            <TextBlock Grid.Column="1"
+                               Text="{x:Bind ViewModel.StreamVolumeText, Mode=OneWay}" 
+                               FontSize="11" 
+                               Foreground="#A8A8A8"
+                               HorizontalAlignment="Right"
+                               TextAlignment="Right"
+                               Width="36"
+                               VerticalAlignment="Center"/>
+                        </Grid>
                     </StackPanel>
 
                     <!-- Separador -->
@@ -552,8 +564,7 @@
                             VerticalAlignment="Center"
                             ToolTipService.ToolTip="Sair da chamada">
                         <StackPanel Orientation="Horizontal" Spacing="6">
-                            <FontIcon Glyph="&#xE711;" FontSize="14" Foreground="White"/>
-                            <TextBlock Text="Sair" Foreground="White" FontSize="12" VerticalAlignment="Center"/>
+                            <FontIcon Glyph="&#xE778;" FontSize="14" Foreground="White"/>
                         </StackPanel>
                     </Button>
 
@@ -567,7 +578,7 @@
                             BorderThickness="0"
                             Padding="12,8"
                             VerticalAlignment="Center"
-                            ToolTipService.ToolTip="Sair da visualização de tela cheia">
+                            ToolTipService.ToolTip="Sair da tela cheia">
                         <FontIcon Glyph="&#xE73F;" FontSize="14" Foreground="#E8E8E8"/>
                     </Button>
                 </Grid>

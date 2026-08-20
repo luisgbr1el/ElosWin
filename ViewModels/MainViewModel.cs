@@ -785,6 +785,7 @@ public partial class MainViewModel : ObservableObject
             ConnectedParticipants.Remove(localUser);
 
         IsInCall = false;
+        IsScreenShareFullscreen = false;
         HasActiveScreenStream = false;
         RemoteScreenImage = null;
         ParticipantsCount = ConnectedParticipants.Count;
