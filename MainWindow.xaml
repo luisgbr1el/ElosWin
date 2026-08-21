@@ -281,6 +281,7 @@
                                     HorizontalAlignment="Stretch"
                                     Height="46"
                                     CornerRadius="6"
+                                    IsEnabled="{x:Bind ViewModel.IsInCall, Mode=OneWay}"
                                     ToolTipService.ToolTip="{x:Bind ViewModel.ScreenShareButtonToolTip, Mode=OneWay}">
                                 <FontIcon Glyph="{x:Bind ViewModel.ScreenShareButtonGlyph, Mode=OneWay}" FontSize="18"/>
                             </Button>
