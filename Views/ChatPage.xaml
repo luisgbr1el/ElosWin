@@ -43,8 +43,20 @@
                         </ListView>
 
                         <Grid Grid.Row="1" ColumnDefinitions="*, 8, Auto">
-                            <TextBox Grid.Column="0" PlaceholderText="Digite uma mensagem..." Text="{x:Bind ViewModel.ChatInputMessage, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" HorizontalAlignment="Stretch" Height="40" CornerRadius="6"/>
-                            <Button Grid.Column="2" Command="{x:Bind ViewModel.SendMessageCommand}" Style="{ThemeResource AccentButtonStyle}" Height="40" Width="46" CornerRadius="6" ToolTipService.ToolTip="Enviar mensagem">
+                            <TextBox Grid.Column="0" 
+                                     PlaceholderText="Digite uma mensagem..." 
+                                     Text="{x:Bind ViewModel.ChatInputMessage, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" 
+                                     KeyDown="ChatInput_KeyDown"
+                                     HorizontalAlignment="Stretch" 
+                                     Height="40" 
+                                     CornerRadius="6"/>
+                            <Button Grid.Column="2" 
+                                    Command="{x:Bind ViewModel.SendMessageCommand}" 
+                                    Style="{ThemeResource AccentButtonStyle}" 
+                                    Height="40" 
+                                    Width="46" 
+                                    CornerRadius="6" 
+                                    ToolTipService.ToolTip="Enviar mensagem">
                                 <FontIcon Glyph="&#xE724;" FontSize="14" Foreground="White"/>
                             </Button>
                         </Grid>
