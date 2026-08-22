@@ -83,6 +83,7 @@ public partial class MainViewModel : ObservableObject
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsNotInCall))]
+    [NotifyPropertyChangedFor(nameof(CanShowScreenShareFullscreenButton))]
     public partial bool IsInCall { get; set; } = false;
 
     public bool IsNotInCall => !IsInCall;
@@ -132,8 +133,6 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ScreenShareButtonGlyph))]
     [NotifyPropertyChangedFor(nameof(ScreenShareButtonToolTip))]
-    [NotifyPropertyChangedFor(nameof(ScreenShareButtonGlyph))]
-    [NotifyPropertyChangedFor(nameof(ScreenShareButtonToolTip))]
     [NotifyPropertyChangedFor(nameof(CanShowScreenShareFullscreenButton))]
     public partial bool IsSharingScreenLocal { get; set; } = false;
 
@@ -158,7 +157,7 @@ public partial class MainViewModel : ObservableObject
 
     public string ScreenShareButtonGlyph => IsSharingScreenLocal ? "\uEA14" : "\uE7F4";
     public string ScreenShareButtonToolTip => IsSharingScreenLocal ? "Parar compartilhamento" : "Compartilhar tela";
-    public Visibility CanShowScreenShareFullscreenButton => (HasActiveScreenStream && !IsSharingScreenLocal) ? Visibility.Visible : Visibility.Collapsed;
+    public Visibility CanShowScreenShareFullscreenButton => (IsInCall && HasActiveScreenStream && !IsSharingScreenLocal) ? Visibility.Visible : Visibility.Collapsed;
 
     // Opções de Modal/Configuração de Transmissão
     public ObservableCollection<CaptureTargetItem> AvailableCaptureTargets { get; } = new();
@@ -495,7 +494,7 @@ public partial class MainViewModel : ObservableObject
     [RelayCommand]
     public void ToggleScreenShareFullscreen()
     {
-        if (IsSharingScreenLocal) return;
+        if (IsSharingScreenLocal || !IsInCall) return;
 
         IsScreenShareFullscreen = !IsScreenShareFullscreen;
     }

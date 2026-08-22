@@ -101,7 +101,7 @@
                                         <TextBlock Text="{x:Bind ViewModel.ScreenStreamPresenterText, Mode=OneWay}" FontWeight="SemiBold" FontSize="14"/>
                                     </StackPanel>
 
-                                    <!-- Botão Fullscreen (apenas para não-apresentadores) -->
+                                    <!-- Botão Fullscreen (apenas para não-apresentadores que estão na chamada) -->
                                     <Button Grid.Column="1"
                                             Command="{x:Bind ViewModel.ToggleScreenShareFullscreenCommand}"
                                             Visibility="{x:Bind ViewModel.CanShowScreenShareFullscreenButton, Mode=OneWay}"
@@ -506,28 +506,28 @@
                     <!-- Controle de Volume -->
                     <StackPanel Orientation="Vertical" Spacing="3" VerticalAlignment="Center" Width="180">
                         <TextBlock Text="Volume" 
-                           FontSize="12" 
-                           Opacity="0.8" 
-                           HorizontalAlignment="Left"/>
+                                   FontSize="12" 
+                                   Opacity="0.8" 
+                                   HorizontalAlignment="Left"/>
 
                         <Grid ColumnDefinitions="*, Auto" VerticalAlignment="Center">
                             <Slider Grid.Column="0"
-                                Value="{x:Bind ViewModel.StreamVolume, Mode=TwoWay}"
-                                Minimum="0"
-                                Maximum="200"
-                                StepFrequency="1"
-                                HorizontalAlignment="Stretch"
-                                Margin="0,0,8,0"
-                                VerticalAlignment="Center"/>
+                                    Value="{x:Bind ViewModel.StreamVolume, Mode=TwoWay}"
+                                    Minimum="0"
+                                    Maximum="200"
+                                    StepFrequency="1"
+                                    HorizontalAlignment="Stretch"
+                                    Margin="0,0,8,0"
+                                    VerticalAlignment="Center"/>
 
                             <TextBlock Grid.Column="1"
-                               Text="{x:Bind ViewModel.StreamVolumeText, Mode=OneWay}" 
-                               FontSize="11" 
-                               Foreground="#A8A8A8"
-                               HorizontalAlignment="Right"
-                               TextAlignment="Right"
-                               Width="36"
-                               VerticalAlignment="Center"/>
+                                       Text="{x:Bind ViewModel.StreamVolumeText, Mode=OneWay}" 
+                                       FontSize="11" 
+                                       Foreground="#A8A8A8"
+                                       HorizontalAlignment="Right"
+                                       TextAlignment="Right"
+                                       Width="36"
+                                       VerticalAlignment="Center"/>
                         </Grid>
                     </StackPanel>
 
