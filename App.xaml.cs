@@ -1,4 +1,5 @@
-﻿using Microsoft.UI.Xaml;
+﻿using ElosWin.Views;
+using Microsoft.UI.Xaml;
 
 namespace ElosWin;
 

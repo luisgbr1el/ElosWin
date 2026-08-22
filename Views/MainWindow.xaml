@@ -1,0 +1,114 @@
+<Window
+    x:Class="ElosWin.Views.MainWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    mc:Ignorable="d"
+    Title="Elos">
+
+    <Window.SystemBackdrop>
+        <DesktopAcrylicBackdrop />
+    </Window.SystemBackdrop>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="36"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <!-- Barra de título -->
+        <Grid x:Name="AppTitleBar" Grid.Row="0" Background="Transparent">
+            <StackPanel Orientation="Horizontal" Spacing="8" Margin="14,0,0,0" VerticalAlignment="Center">
+                <FontIcon Glyph="&#xE717;" FontSize="13" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"/>
+                <TextBlock Text="Elos" FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center"/>
+            </StackPanel>
+        </Grid>
+
+        <!-- Menu Lateral -->
+        <NavigationView 
+            x:Name="NavView"
+            Grid.Row="1"
+            IsBackButtonVisible="Collapsed"
+            PaneDisplayMode="Left"
+            OpenPaneLength="220"
+            IsSettingsVisible="False"
+            ItemInvoked="NavView_ItemInvoked"
+            Loaded="NavView_Loaded">
+
+            <NavigationView.MenuItems>
+                <NavigationViewItem x:Name="CallNavItem" Content="Chamada" Tag="Call" IsSelected="True">
+                    <NavigationViewItem.Icon>
+                        <FontIcon Glyph="&#xE717;" />
+                    </NavigationViewItem.Icon>
+                </NavigationViewItem>
+                <NavigationViewItem x:Name="ChatNavItem" Content="Bate-papo" Tag="Chat">
+                    <NavigationViewItem.Icon>
+                        <FontIcon Glyph="&#xE8BD;" />
+                    </NavigationViewItem.Icon>
+                </NavigationViewItem>
+            </NavigationView.MenuItems>
+
+            <NavigationView.FooterMenuItems>
+                <NavigationViewItemSeparator />
+                <NavigationViewItem x:Name="SettingsNavItem" Content="Configurações" Tag="Settings">
+                    <NavigationViewItem.Icon>
+                        <FontIcon Glyph="&#xE713;" />
+                    </NavigationViewItem.Icon>
+                </NavigationViewItem>
+            </NavigationView.FooterMenuItems>
+
+            <!-- Frame onde as páginas são renderizadas -->
+            <Frame x:Name="ContentFrame"/>
+        </NavigationView>
+
+        <!-- Overlay Fullscreen para Transmissão de Tela -->
+        <Grid x:Name="FullscreenOverlay"
+              Grid.Row="0"
+              Grid.RowSpan="2"
+              Background="#1A1A1A"
+              Visibility="{x:Bind CallVm.IsScreenShareFullscreen, Mode=OneWay}">
+
+            <Grid.RowDefinitions>
+                <RowDefinition Height="*"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+
+            <Border Grid.Row="0" Background="Black" HorizontalAlignment="Stretch" VerticalAlignment="Stretch">
+                <Image Source="{x:Bind CallVm.RemoteScreenImage, Mode=OneWay}" Stretch="Uniform"/>
+            </Border>
+
+            <Border Grid.Row="1" Background="#2A2A2A" BorderThickness="0,1,0,0" BorderBrush="#404040" Padding="20">
+                <Grid ColumnDefinitions="Auto, Auto, Auto, Auto, Auto, *, Auto">
+                    <StackPanel Orientation="Vertical" Spacing="3" VerticalAlignment="Center" Width="180">
+                        <TextBlock Text="Volume" FontSize="12" Opacity="0.8" HorizontalAlignment="Left"/>
+                        <Grid ColumnDefinitions="*, Auto" VerticalAlignment="Center">
+                            <Slider Grid.Column="0" Value="{x:Bind CallVm.StreamVolume, Mode=TwoWay}" Minimum="0" Maximum="200" StepFrequency="1" HorizontalAlignment="Stretch" Margin="0,0,8,0" VerticalAlignment="Center"/>
+                            <TextBlock Grid.Column="1" Text="{x:Bind CallVm.StreamVolumeText, Mode=OneWay}" FontSize="11" Foreground="#A8A8A8" HorizontalAlignment="Right" TextAlignment="Right" Width="36" VerticalAlignment="Center"/>
+                        </Grid>
+                    </StackPanel>
+
+                    <Border Grid.Column="1" Width="1" Margin="12,0" Background="#404040"/>
+
+                    <Button Grid.Column="2" Command="{x:Bind CallVm.ToggleMuteCommand}" Background="Transparent" BorderThickness="0" Padding="12,8" VerticalAlignment="Center" ToolTipService.ToolTip="{x:Bind CallVm.MuteToolTip, Mode=OneWay}">
+                        <FontIcon Glyph="{x:Bind CallVm.MuteGlyph, Mode=OneWay}" FontSize="14" Foreground="#E8E8E8"/>
+                    </Button>
+
+                    <Button Grid.Column="3" Command="{x:Bind CallVm.ToggleDeafenCommand}" Background="Transparent" BorderThickness="0" Padding="12,8" VerticalAlignment="Center" ToolTipService.ToolTip="{x:Bind CallVm.DeafenToolTip, Mode=OneWay}">
+                        <FontIcon Glyph="{x:Bind CallVm.DeafenGlyph, Mode=OneWay}" FontSize="14" Foreground="#E8E8E8"/>
+                    </Button>
+
+                    <Button Grid.Column="4" Command="{x:Bind CallVm.LeaveCallCommand}" Background="#DC2626" BorderThickness="0" Padding="12,8" VerticalAlignment="Center" ToolTipService.ToolTip="Sair da chamada">
+                        <FontIcon Glyph="&#xE778;" FontSize="14" Foreground="White"/>
+                    </Button>
+
+                    <Border Grid.Column="5"/>
+
+                    <Button Grid.Column="6" Command="{x:Bind CallVm.ToggleScreenShareFullscreenCommand}" Background="Transparent" BorderThickness="0" Padding="12,8" VerticalAlignment="Center" ToolTipService.ToolTip="Sair da tela cheia">
+                        <FontIcon Glyph="&#xE73F;" FontSize="14" Foreground="#E8E8E8"/>
+                    </Button>
+                </Grid>
+            </Border>
+        </Grid>
+    </Grid>
+</Window>
