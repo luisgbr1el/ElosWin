@@ -1,9 +1,4 @@
-﻿using System;
-using System.Collections.ObjectModel;
-using System.Linq;
-using System.Threading;
-using System.Threading.Tasks;
-using CommunityToolkit.Mvvm.ComponentModel;
+﻿using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Concentus;
 using Concentus.Enums;
@@ -16,6 +11,11 @@ using ElosWin.Services.ScreenShare;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Media.Imaging;
+using System;
+using System.Collections.ObjectModel;
+using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
 using Windows.Storage.Streams;
 
 namespace ElosWin.ViewModels;
@@ -219,7 +219,7 @@ public partial class CallViewModel : ObservableObject
         {
             _dispatcherQueue.TryEnqueue(() =>
             {
-                var existing = ConnectedParticipants.FirstOrDefault(p => !p.IsLocalUser && p.Equals(peer));
+                var existing = ConnectedParticipants.FirstOrDefault(p => !p.IsLocalUser && (p.IpAddress == peer.IpAddress || p.Username.Equals(peer.Username, StringComparison.OrdinalIgnoreCase)));
 
                 if (existing == null)
                 {
@@ -242,20 +242,21 @@ public partial class CallViewModel : ObservableObject
         {
             _dispatcherQueue.TryEnqueue(() =>
             {
-                var existing = ConnectedParticipants.FirstOrDefault(p => !p.IsLocalUser && p.Equals(peer));
+                var matched = ConnectedParticipants.Where(p => !p.IsLocalUser && (p.IpAddress == peer.IpAddress || p.Username.Equals(peer.Username, StringComparison.OrdinalIgnoreCase))).ToList();
 
-                if (existing != null)
+                foreach (var existing in matched)
                 {
                     ConnectedParticipants.Remove(existing);
-                    _chatService.RemoveTarget(peer.IpAddress, peer.AudioPort);
+                    _chatService.RemoveTarget(existing.IpAddress, existing.AudioPort);
 
                     if (IsInCall)
                     {
-                        _udpClient.RemoveTarget(peer.IpAddress, peer.AudioPort);
-                        _screenNetworkService.RemoveTarget(peer.IpAddress, peer.AudioPort + 100);
-                        AudioService.RemovePeerDecoder($"{peer.IpAddress}:{peer.AudioPort}");
+                        _udpClient.RemoveTarget(existing.IpAddress, existing.AudioPort);
+                        _screenNetworkService.RemoveTarget(existing.IpAddress, existing.AudioPort + 100);
+                        AudioService.RemovePeerDecoder($"{existing.IpAddress}:{existing.AudioPort}");
                     }
                 }
+
                 ParticipantsCount = ConnectedParticipants.Count;
                 UpdateCallStatusMessage();
                 CheckScreenStreamPresence();
@@ -417,20 +418,20 @@ public partial class CallViewModel : ObservableObject
 
             _discoveryService.IsInCall = true;
 
-            if (!ConnectedParticipants.Any(p => p.IsLocalUser))
-            {
-                ConnectedParticipants.Insert(0, new PeerInfo
-                {
-                    Username = savedSettings.Username,
-                    IsLocalUser = true,
-                    AudioPort = localP,
-                    IpAddress = "127.0.0.1",
-                    State = UserState.InCall
-                });
-            }
+            ConnectedParticipants.Clear();
 
-            foreach (var peer in ConnectedParticipants.Where(p => !p.IsLocalUser))
+            ConnectedParticipants.Add(new PeerInfo
             {
+                Username = savedSettings.Username,
+                IsLocalUser = true,
+                AudioPort = localP,
+                IpAddress = "127.0.0.1",
+                State = UserState.InCall
+            });
+
+            foreach (var peer in _discoveryService.GetKnownPeersInCall().Where(p => !p.IsLocalUser))
+            {
+                ConnectedParticipants.Add(peer);
                 _udpClient.AddTarget(peer.IpAddress, peer.AudioPort);
                 _screenNetworkService.AddTarget(peer.IpAddress, peer.AudioPort + 100);
                 _chatService.AddTarget(peer.IpAddress, peer.AudioPort);
@@ -469,7 +470,6 @@ public partial class CallViewModel : ObservableObject
             AudioService.RemovePeerDecoder($"{p.IpAddress}:{p.AudioPort}");
         }
 
-        // Remove apenas você da lista. Os outros participantes continuam listados.
         var localUser = ConnectedParticipants.FirstOrDefault(p => p.IsLocalUser);
         if (localUser != null) ConnectedParticipants.Remove(localUser);
 

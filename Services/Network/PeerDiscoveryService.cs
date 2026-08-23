@@ -1,4 +1,6 @@
-﻿using System;
+﻿using ElosWin.Models;
+using ElosWin.Models.Enums;
+using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
@@ -8,15 +10,13 @@ using System.Net.Sockets;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
-using ElosWin.Models;
-using ElosWin.Models.Enums;
 
 namespace ElosWin.Services.Network;
 
 public class PeerDiscoveryService : IDisposable
 {
     private const int DiscoveryPort = 5555;
-    private const int PeerTimeoutSeconds = 6;
+    private const int PeerTimeoutSeconds = 4;
 
     private UdpClient? _udpClient;
     private CancellationTokenSource? _cts;
@@ -79,12 +79,14 @@ public class PeerDiscoveryService : IDisposable
         try
         {
             string stateStr = CurrentState.ToString();
-            string message = $"ELOS_PING|{_instanceId}|{Username}|{MyAudioPort}|{stateStr}";
-            byte[] bytes = Encoding.UTF8.GetBytes(message);
+            string message = CurrentState == UserState.Idle
+                ? $"ELOS_LEAVE|{_instanceId}|{Username}|{MyAudioPort}"
+                : $"ELOS_PING|{_instanceId}|{Username}|{MyAudioPort}|{stateStr}";
 
+            byte[] bytes = Encoding.UTF8.GetBytes(message);
             var broadcastTargets = GetBroadcastAddresses();
 
-            for (int r = 0; r < 2; r++)
+            for (int r = 0; r < 3; r++)
             {
                 foreach (var target in broadcastTargets)
                 {
@@ -161,7 +163,10 @@ public class PeerDiscoveryService : IDisposable
             try
             {
                 string stateStr = CurrentState.ToString();
-                string message = $"ELOS_PING|{_instanceId}|{Username}|{MyAudioPort}|{stateStr}";
+                string message = CurrentState == UserState.Idle
+                    ? $"ELOS_PING|{_instanceId}|{Username}|{MyAudioPort}|Idle"
+                    : $"ELOS_PING|{_instanceId}|{Username}|{MyAudioPort}|{stateStr}";
+
                 byte[] bytes = Encoding.UTF8.GetBytes(message);
 
                 var broadcastTargets = GetBroadcastAddresses();
@@ -200,7 +205,7 @@ public class PeerDiscoveryService : IDisposable
                 string raw = Encoding.UTF8.GetString(result.Buffer);
 
                 string[] parts = raw.Split('|');
-                if (parts.Length >= 5 && (parts[0] == "ELOS_PING" || parts[0] == "ELOS_PONG"))
+                if (parts.Length >= 4)
                 {
                     string packetType = parts[0];
                     string senderGuidStr = parts[1];
@@ -215,76 +220,79 @@ public class PeerDiscoveryService : IDisposable
                         if (myIps.Contains(peerIp) && peerAudioPort == MyAudioPort)
                             continue;
 
-                        string rawState = parts[4];
-                        UserState parsedState = rawState switch
-                        {
-                            "IN_CALL" or "InCall" => UserState.InCall,
-                            "SHARING_SCREEN" or "SharingScreen" => UserState.SharingScreen,
-                            _ => UserState.Idle
-                        };
-
                         string peerKey = $"{peerIp}:{peerAudioPort}";
 
-                        if (packetType == "ELOS_PING" && _udpClient != null)
+                        if (packetType == "ELOS_LEAVE")
                         {
-                            try
-                            {
-                                string myState = CurrentState.ToString();
-                                string pong = $"ELOS_PONG|{_instanceId}|{Username}|{MyAudioPort}|{myState}";
-                                byte[] pongBytes = Encoding.UTF8.GetBytes(pong);
-                                _ = _udpClient.SendAsync(pongBytes, pongBytes.Length, result.RemoteEndPoint);
-                            }
-                            catch { }
+                            RemovePeer(peerKey, peerUser, peerIp);
+                            continue;
                         }
 
-                        if (parsedState != UserState.Idle)
+                        if (parts.Length >= 5 && (packetType == "ELOS_PING" || packetType == "ELOS_PONG"))
                         {
-                            bool isNew = !_activePeers.ContainsKey(peerKey);
-                            bool stateChanged = false;
-                            PeerInfo? updatedPeer = null;
+                            string rawState = parts[4];
+                            UserState parsedState = rawState switch
+                            {
+                                "IN_CALL" or "InCall" => UserState.InCall,
+                                "SHARING_SCREEN" or "SharingScreen" => UserState.SharingScreen,
+                                _ => UserState.Idle
+                            };
 
-                            _activePeers.AddOrUpdate(
-                                peerKey,
-                                _ => new PeerInfo
+                            if (packetType == "ELOS_PING" && _udpClient != null && IsInCall)
+                            {
+                                try
                                 {
-                                    Username = peerUser,
-                                    IpAddress = peerIp,
-                                    AudioPort = peerAudioPort,
-                                    LastSeen = DateTime.Now,
-                                    State = parsedState
-                                },
-                                (_, existing) =>
-                                {
-                                    existing.LastSeen = DateTime.Now;
-                                    existing.Username = peerUser;
-                                    if (existing.State != parsedState)
-                                    {
-                                        existing.State = parsedState;
-                                        stateChanged = true;
-                                    }
-                                    updatedPeer = existing;
-                                    return existing;
+                                    string myState = CurrentState.ToString();
+                                    string pong = $"ELOS_PONG|{_instanceId}|{Username}|{MyAudioPort}|{myState}";
+                                    byte[] pongBytes = Encoding.UTF8.GetBytes(pong);
+                                    _ = _udpClient.SendAsync(pongBytes, pongBytes.Length, result.RemoteEndPoint);
                                 }
-                            );
-
-                            if (isNew)
-                            {
-                                if (_activePeers.TryGetValue(peerKey, out var createdPeer))
-                                    OnPeerJoinedCall?.Invoke(createdPeer);
+                                catch { }
                             }
-                            else if (stateChanged && updatedPeer != null)
-                                OnPeerStateChanged?.Invoke(updatedPeer);
-                        }
-                        else
-                        {
-                            if (_activePeers.TryRemove(peerKey, out var removed))
-                            {
-                                removed.State = UserState.Idle;
-                                OnPeerLeftCall?.Invoke(removed);
-                            }
-                        }
 
-                        OnCallStateUpdated?.Invoke(_activePeers.Count);
+                            if (parsedState != UserState.Idle)
+                            {
+                                bool isNew = !_activePeers.ContainsKey(peerKey);
+                                bool stateChanged = false;
+                                PeerInfo? updatedPeer = null;
+
+                                _activePeers.AddOrUpdate(
+                                    peerKey,
+                                    _ => new PeerInfo
+                                    {
+                                        Username = peerUser,
+                                        IpAddress = peerIp,
+                                        AudioPort = peerAudioPort,
+                                        LastSeen = DateTime.Now,
+                                        State = parsedState
+                                    },
+                                    (_, existing) =>
+                                    {
+                                        existing.LastSeen = DateTime.Now;
+                                        existing.Username = peerUser;
+                                        if (existing.State != parsedState)
+                                        {
+                                            existing.State = parsedState;
+                                            stateChanged = true;
+                                        }
+                                        updatedPeer = existing;
+                                        return existing;
+                                    }
+                                );
+
+                                if (isNew)
+                                {
+                                    if (_activePeers.TryGetValue(peerKey, out var createdPeer))
+                                        OnPeerJoinedCall?.Invoke(createdPeer);
+                                }
+                                else if (stateChanged && updatedPeer != null)
+                                    OnPeerStateChanged?.Invoke(updatedPeer);
+                            }
+                            else
+                                RemovePeer(peerKey, peerUser, peerIp);
+
+                            OnCallStateUpdated?.Invoke(_activePeers.Count);
+                        }
                     }
                 }
             }
@@ -297,6 +305,37 @@ public class PeerDiscoveryService : IDisposable
                 System.Diagnostics.Debug.WriteLine($"Erro no listen: {ex.Message}");
             }
         }
+    }
+
+    private void RemovePeer(string peerKey, string peerUser, string peerIp)
+    {
+        var peerToRemove = new PeerInfo
+        {
+            Username = peerUser,
+            IpAddress = peerIp,
+            State = UserState.Idle
+        };
+
+        if (_activePeers.TryRemove(peerKey, out var removed))
+        {
+            removed.State = UserState.Idle;
+            OnPeerLeftCall?.Invoke(removed);
+        }
+        else
+        {
+            var matches = _activePeers.Where(p => p.Value.Username.Equals(peerUser, StringComparison.OrdinalIgnoreCase) || p.Value.IpAddress == peerIp).ToList();
+            foreach (var match in matches)
+            {
+                if (_activePeers.TryRemove(match.Key, out var fallbackRemoved))
+                {
+                    fallbackRemoved.State = UserState.Idle;
+                    OnPeerLeftCall?.Invoke(fallbackRemoved);
+                }
+            }
+        }
+
+        OnPeerLeftCall?.Invoke(peerToRemove);
+        OnCallStateUpdated?.Invoke(_activePeers.Count);
     }
 
     private async Task CleanupLoopAsync(CancellationToken token)

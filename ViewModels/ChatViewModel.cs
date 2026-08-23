@@ -1,13 +1,15 @@
-﻿using System;
-using System.Collections.ObjectModel;
-using System.Runtime.InteropServices;
-using System.Threading.Tasks;
-using CommunityToolkit.Mvvm.ComponentModel;
+﻿using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using ElosWin.Models;
 using ElosWin.Services;
 using ElosWin.Services.Network;
 using Microsoft.UI.Dispatching;
+using Microsoft.Win32;
+using System;
+using System.Collections.ObjectModel;
+using System.Diagnostics;
+using System.Runtime.InteropServices;
+using System.Threading.Tasks;
 using Windows.Data.Xml.Dom;
 using Windows.UI.Notifications;
 
@@ -18,7 +20,7 @@ public partial class ChatViewModel : ObservableObject
     [DllImport("shell32.dll", SetLastError = true)]
     private static extern void SetCurrentProcessExplicitAppUserModelID([MarshalAs(UnmanagedType.LPWStr)] string AppID);
 
-    private const string AppUserModelId = "Elos.VoiceChat.Desktop";
+    private const string AppId = "Elos";
     private readonly DispatcherQueue _dispatcherQueue;
 
     public ObservableCollection<ChatMessage> ChatMessages { get; } = new();
@@ -31,6 +33,9 @@ public partial class ChatViewModel : ObservableObject
     [ObservableProperty]
     public partial string ChatStatusText { get; set; } = "0 mensagens";
 
+    [ObservableProperty]
+    public partial bool IsChatPageActive { get; set; } = false;
+
     public bool HasChatMessages => ChatMessages.Count > 0;
     public bool NoChatMessages => ChatMessages.Count == 0;
 
@@ -39,11 +44,7 @@ public partial class ChatViewModel : ObservableObject
         _dispatcherQueue = DispatcherQueue.GetForCurrentThread();
         ChatService = AppServices.Chat;
 
-        try
-        {
-            SetCurrentProcessExplicitAppUserModelID(AppUserModelId);
-        }
-        catch { }
+        RegisterAppUserModelId();
 
         var savedSettings = AppServices.Settings.LoadSettings();
 
@@ -67,22 +68,35 @@ public partial class ChatViewModel : ObservableObject
                 OnPropertyChanged(nameof(NoChatMessages));
                 ChatStatusText = $"{ChatMessages.Count} {(ChatMessages.Count == 1 ? "mensagem" : "mensagens")}";
 
-                if (currentSettings.EnableNotifications)
-                {
-                    ShowNativeToastNotification(message.SenderName, message.Content);
-                }
+                if (currentSettings.EnableNotifications && !IsChatPageActive)
+                    ShowToast(message.SenderName, message.Content);
             });
         };
     }
 
-    private void ShowNativeToastNotification(string title, string content)
+    private static void RegisterAppUserModelId()
+    {
+        try
+        {
+            SetCurrentProcessExplicitAppUserModelID(AppId);
+
+            using var key = Registry.CurrentUser.CreateSubKey($@"Software\Classes\AppUserModelId\{AppId}");
+            key?.SetValue("DisplayName", "Elos");
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"Erro ao registrar AUMID: {ex.Message}");
+        }
+    }
+
+    private void ShowToast(string title, string content)
     {
         try
         {
             string safeTitle = System.Security.SecurityElement.Escape(title);
             string safeContent = System.Security.SecurityElement.Escape(content);
 
-            string toastXmlString = $@"
+            string toastXml = $@"
             <toast>
                 <visual>
                     <binding template='ToastGeneric'>
@@ -93,14 +107,14 @@ public partial class ChatViewModel : ObservableObject
             </toast>";
 
             var xmlDoc = new XmlDocument();
-            xmlDoc.LoadXml(toastXmlString);
+            xmlDoc.LoadXml(toastXml);
 
             var toast = new ToastNotification(xmlDoc);
-            ToastNotificationManager.CreateToastNotifier(AppUserModelId).Show(toast);
+            ToastNotificationManager.CreateToastNotifier(AppId).Show(toast);
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"Erro ao exibir toast: {ex.Message}");
+            Debug.WriteLine($"Erro ao disparar Toast: {ex.Message}");
         }
     }
 
