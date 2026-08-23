@@ -9,10 +9,10 @@ using Concentus;
 using Concentus.Enums;
 using ElosWin.Models;
 using ElosWin.Models.Enums;
+using ElosWin.Services;
 using ElosWin.Services.Audio;
 using ElosWin.Services.Network;
 using ElosWin.Services.ScreenShare;
-using ElosWin.Views;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Media.Imaging;
@@ -32,6 +32,7 @@ public partial class CallViewModel : ObservableObject
     private readonly PeerDiscoveryService _discoveryService;
     private readonly ScreenCaptureService _screenCaptureService;
     private readonly ScreenNetworkService _screenNetworkService;
+    private readonly ChatNetworkService _chatService;
     private readonly DispatcherQueue _dispatcherQueue;
 
     private readonly IOpusEncoder _screenAudioEncoder;
@@ -128,20 +129,46 @@ public partial class CallViewModel : ObservableObject
     public CallViewModel()
     {
         _dispatcherQueue = DispatcherQueue.GetForCurrentThread();
-        AudioService = new WasapiAudioService();
-        _udpClient = new UdpVoiceClient();
-        _discoveryService = new PeerDiscoveryService();
+        AudioService = AppServices.Audio;
+        _udpClient = AppServices.Voice;
+        _discoveryService = AppServices.Discovery;
         _screenCaptureService = new ScreenCaptureService();
-        _screenNetworkService = new ScreenNetworkService();
+        _screenNetworkService = AppServices.ScreenNetwork;
+        _chatService = AppServices.Chat;
 
         _screenAudioEncoder = OpusCodecFactory.CreateEncoder(ScreenAudioSampleRate, ScreenAudioChannels, OpusApplication.OPUS_APPLICATION_AUDIO);
         _screenAudioEncoder.Bitrate = 96000;
         SelectedQuality = AvailableQualities[0];
 
+        var savedSettings = AppServices.Settings.LoadSettings();
+        if (int.TryParse(savedSettings.LocalPort, out int localP))
+        {
+            _discoveryService.Start(savedSettings.Username, localP);
+        }
+
+        AudioService.OnVoiceLevelChanged += (level) =>
+        {
+            if (!IsInCall || IsMuted || IsDeafened) return;
+
+            if (level > 0.02f)
+            {
+                _dispatcherQueue.TryEnqueue(() =>
+                {
+                    var localUser = ConnectedParticipants.FirstOrDefault(p => p.IsLocalUser);
+                    if (localUser != null)
+                    {
+                        localUser.IsSpeaking = true;
+                        localUser.LastSpokeTime = DateTime.Now;
+                    }
+                });
+            }
+        };
+
         _udpClient.OnAudioPacketReceived += (opusPacket, senderEp) =>
         {
             if (!IsInCall) return;
             string senderIp = senderEp.Address.ToString();
+
             var remotePeer = ConnectedParticipants.FirstOrDefault(p => !p.IsLocalUser && (p.IpAddress == senderIp || p.AudioPort == senderEp.Port));
             if (remotePeer != null && remotePeer.IsLocallyMuted) return;
 
@@ -149,7 +176,7 @@ public partial class CallViewModel : ObservableObject
             float peerVol = (remotePeer != null) ? (float)(remotePeer.UserVolume / 100.0) : 1.0f;
             float level = AudioService.PlayReceivedFrameFromSender(opusPacket, senderKey, peerVol);
 
-            if (level > 0.035f && remotePeer != null)
+            if (level > 0.015f && remotePeer != null)
             {
                 _dispatcherQueue.TryEnqueue(() =>
                 {
@@ -193,9 +220,12 @@ public partial class CallViewModel : ObservableObject
             _dispatcherQueue.TryEnqueue(() =>
             {
                 var existing = ConnectedParticipants.FirstOrDefault(p => !p.IsLocalUser && p.Equals(peer));
+
                 if (existing == null)
                 {
                     ConnectedParticipants.Add(peer);
+                    _chatService.AddTarget(peer.IpAddress, peer.AudioPort);
+
                     if (IsInCall)
                     {
                         _udpClient.AddTarget(peer.IpAddress, peer.AudioPort);
@@ -213,9 +243,12 @@ public partial class CallViewModel : ObservableObject
             _dispatcherQueue.TryEnqueue(() =>
             {
                 var existing = ConnectedParticipants.FirstOrDefault(p => !p.IsLocalUser && p.Equals(peer));
+
                 if (existing != null)
                 {
                     ConnectedParticipants.Remove(existing);
+                    _chatService.RemoveTarget(peer.IpAddress, peer.AudioPort);
+
                     if (IsInCall)
                     {
                         _udpClient.RemoveTarget(peer.IpAddress, peer.AudioPort);
@@ -372,14 +405,15 @@ public partial class CallViewModel : ObservableObject
     {
         try
         {
-            int localP = int.Parse(MainWindow.SharedSettingsVm.LocalPort);
+            var savedSettings = AppServices.Settings.LoadSettings();
+            int localP = int.Parse(savedSettings.LocalPort);
             _udpClient.Start(localP);
             _screenNetworkService.Start(localP + 100);
 
             AudioService.StartNetworkStream((packet, length) =>
             {
                 _udpClient.SendAudioFrame(packet, length);
-            }, MainWindow.SharedSettingsVm.SelectedMicrophone?.ID, MainWindow.SharedSettingsVm.SelectedOutputDevice?.ID);
+            }, savedSettings.SelectedMicrophoneId, savedSettings.SelectedOutputDeviceId);
 
             _discoveryService.IsInCall = true;
 
@@ -387,7 +421,7 @@ public partial class CallViewModel : ObservableObject
             {
                 ConnectedParticipants.Insert(0, new PeerInfo
                 {
-                    Username = MainWindow.SharedSettingsVm.Username,
+                    Username = savedSettings.Username,
                     IsLocalUser = true,
                     AudioPort = localP,
                     IpAddress = "127.0.0.1",
@@ -399,6 +433,7 @@ public partial class CallViewModel : ObservableObject
             {
                 _udpClient.AddTarget(peer.IpAddress, peer.AudioPort);
                 _screenNetworkService.AddTarget(peer.IpAddress, peer.AudioPort + 100);
+                _chatService.AddTarget(peer.IpAddress, peer.AudioPort);
             }
 
             _discoveryService.BroadcastImmediateState();
@@ -434,15 +469,15 @@ public partial class CallViewModel : ObservableObject
             AudioService.RemovePeerDecoder($"{p.IpAddress}:{p.AudioPort}");
         }
 
+        // Remove apenas você da lista. Os outros participantes continuam listados.
         var localUser = ConnectedParticipants.FirstOrDefault(p => p.IsLocalUser);
         if (localUser != null) ConnectedParticipants.Remove(localUser);
 
         IsInCall = false;
         IsScreenShareFullscreen = false;
-        HasActiveScreenStream = false;
-        RemoteScreenImage = null;
         ParticipantsCount = ConnectedParticipants.Count;
         UpdateCallStatusMessage();
+        CheckScreenStreamPresence();
     }
 
     private void CheckScreenStreamPresence()
@@ -493,7 +528,7 @@ public partial class CallViewModel : ObservableObject
         {
             while (!token.IsCancellationRequested)
             {
-                await Task.Delay(50, token);
+                await Task.Delay(40, token);
                 var now = DateTime.Now;
                 _dispatcherQueue.TryEnqueue(() =>
                 {
@@ -501,7 +536,7 @@ public partial class CallViewModel : ObservableObject
                     {
                         foreach (var participant in ConnectedParticipants)
                         {
-                            if (participant.IsSpeaking && (now - participant.LastSpokeTime).TotalMilliseconds > 400)
+                            if (participant.IsSpeaking && (now - participant.LastSpokeTime).TotalMilliseconds > 350)
                                 participant.IsSpeaking = false;
                         }
                     }

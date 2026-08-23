@@ -10,9 +10,13 @@ namespace ElosWin.Views;
 
 public sealed partial class MainWindow : Window
 {
-    public static CallViewModel SharedCallVm { get; } = new();
-    public static ChatViewModel SharedChatVm { get; } = new();
-    public static SettingsViewModel SharedSettingsVm { get; } = new();
+    private static readonly Lazy<CallViewModel> _sharedCallVm = new(() => new CallViewModel());
+    private static readonly Lazy<SettingsViewModel> _sharedSettingsVm = new(() => new SettingsViewModel());
+    private static readonly Lazy<ChatViewModel> _sharedChatVm = new(() => new ChatViewModel());
+
+    public static CallViewModel SharedCallVm => _sharedCallVm.Value;
+    public static SettingsViewModel SharedSettingsVm => _sharedSettingsVm.Value;
+    public static ChatViewModel SharedChatVm => _sharedChatVm.Value;
 
     public CallViewModel CallVm => SharedCallVm;
     public ChatViewModel ChatVm => SharedChatVm;
@@ -24,6 +28,10 @@ public sealed partial class MainWindow : Window
     {
         InitializeComponent();
         ConfigureCustomTitleBar();
+
+        _ = SharedSettingsVm;
+        _ = SharedCallVm;
+        _ = SharedChatVm;
     }
 
     private void ConfigureCustomTitleBar()

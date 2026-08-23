@@ -19,6 +19,9 @@ public class AppSettings
     public bool EnableNoiseSuppression { get; set; } = true;
     public double NoiseSuppressionLevel { get; set; } = 50.0;
     public double GateSensitivity { get; set; } = 40.0;
+
+    // Notificações
+    public bool EnableNotifications { get; set; } = true;
 }
 
 public class SettingsService

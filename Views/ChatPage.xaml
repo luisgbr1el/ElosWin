@@ -14,27 +14,94 @@
                         <TextBlock Text="Troque mensagens com todos na rede local" FontSize="13" Opacity="0.6"/>
                     </StackPanel>
 
-                    <Border Grid.Column="1" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="20" Padding="14,6" VerticalAlignment="Center">
-                        <TextBlock Text="{x:Bind ViewModel.ChatStatusText, Mode=OneWay}" FontSize="12" FontWeight="SemiBold" Opacity="0.9" VerticalAlignment="Center"/>
+                    <Border Grid.Column="1" 
+                            Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" 
+                            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" 
+                            BorderThickness="1" 
+                            CornerRadius="20" 
+                            Padding="14,6" 
+                            VerticalAlignment="Center">
+                        <TextBlock Text="{x:Bind ViewModel.ChatStatusText, Mode=OneWay}" 
+                                   FontSize="12" 
+                                   FontWeight="SemiBold" 
+                                   Opacity="0.9" 
+                                   VerticalAlignment="Center"/>
                     </Border>
                 </Grid>
 
                 <!-- Área de Mensagens e Envio -->
-                <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="8" Padding="20">
+                <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" 
+                        BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" 
+                        BorderThickness="1" 
+                        CornerRadius="8" 
+                        Padding="20">
                     <Grid RowDefinitions="*, Auto" MinHeight="480">
-                        <TextBlock Grid.Row="0" Text="Nenhuma mensagem. Diga oi!" FontSize="13" Opacity="0.5" HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="{x:Bind ViewModel.NoChatMessages, Mode=OneWay}"/>
+                        <!-- Estado Vazio -->
+                        <TextBlock Grid.Row="0" 
+                                   Text="Nenhuma mensagem. Diga oi!" 
+                                   FontSize="13" 
+                                   Opacity="0.5" 
+                                   HorizontalAlignment="Center" 
+                                   VerticalAlignment="Center" 
+                                   Visibility="{x:Bind ViewModel.NoChatMessages, Mode=OneWay}"/>
 
-                        <ListView Grid.Row="0" ItemsSource="{x:Bind ViewModel.ChatMessages}" Visibility="{x:Bind ViewModel.HasChatMessages, Mode=OneWay}" SelectionMode="None" Margin="0,0,0,16">
+                        <!-- Histórico de Mensagens -->
+                        <ListView Grid.Row="0" 
+                                  ItemsSource="{x:Bind ViewModel.ChatMessages}" 
+                                  Visibility="{x:Bind ViewModel.HasChatMessages, Mode=OneWay}" 
+                                  SelectionMode="None" 
+                                  Margin="0,0,0,16">
                             <ListView.ItemTemplate>
                                 <DataTemplate x:DataType="models:ChatMessage">
-                                    <Grid Margin="0,4" HorizontalAlignment="{x:Bind Alignment}">
-                                        <Border Background="{x:Bind BubbleBackgroundBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="10" Padding="12,8" MaxWidth="520">
-                                            <StackPanel Spacing="4">
+                                    <Grid Margin="0,5" HorizontalAlignment="{x:Bind Alignment}">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="*"/>
+                                        </Grid.ColumnDefinitions>
+
+                                        <!-- Ícone do Participante (mesmo padrão da lista de chamada) -->
+                                        <Border Grid.Column="0"
+                                                Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                                                BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                                                BorderThickness="1"
+                                                CornerRadius="16"
+                                                Width="32"
+                                                Height="32"
+                                                Margin="0,0,8,0"
+                                                VerticalAlignment="Bottom"
+                                                Visibility="{x:Bind models:ChatMessage.GetAvatarVisibility(IsFromSelf), Mode=OneWay}">
+                                            <FontIcon Glyph="&#xE77B;" FontSize="13" Foreground="{ThemeResource TextFillColorSecondaryBrush}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                        </Border>
+
+                                        <!-- Balão da Mensagem -->
+                                        <Border Grid.Column="1"
+                                                Background="{x:Bind BubbleBackgroundBrush}" 
+                                                BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" 
+                                                BorderThickness="1" 
+                                                CornerRadius="10" 
+                                                Padding="12,8" 
+                                                MaxWidth="540">
+                                            <StackPanel Spacing="3">
+                                                <!-- Remetente e Horário -->
                                                 <Grid ColumnDefinitions="*, Auto">
-                                                    <TextBlock Text="{x:Bind SenderName}" FontSize="12" FontWeight="Bold" Margin="0,0,12,0" Foreground="{ThemeResource TextFillColorPrimaryBrush}"/>
-                                                    <TextBlock Grid.Column="1" Text="{x:Bind TimestampText}" FontSize="10" Opacity="0.6" Foreground="{ThemeResource TextFillColorSecondaryBrush}" VerticalAlignment="Center"/>
+                                                    <TextBlock Text="{x:Bind SenderName}" 
+                                                               FontSize="12" 
+                                                               FontWeight="Bold" 
+                                                               Margin="0,0,14,0" 
+                                                               Foreground="{ThemeResource TextFillColorPrimaryBrush}"/>
+                                                    <TextBlock Grid.Column="1" 
+                                                               Text="{x:Bind TimestampText}" 
+                                                               FontSize="10" 
+                                                               Opacity="0.5" 
+                                                               Foreground="{ThemeResource TextFillColorSecondaryBrush}" 
+                                                               VerticalAlignment="Center"/>
                                                 </Grid>
-                                                <TextBlock Text="{x:Bind Content}" FontSize="13" Foreground="{ThemeResource TextFillColorPrimaryBrush}" TextWrapping="Wrap"/>
+
+                                                <!-- Conteúdo do Texto -->
+                                                <TextBlock Text="{x:Bind Content}" 
+                                                           FontSize="13" 
+                                                           Foreground="{ThemeResource TextFillColorPrimaryBrush}" 
+                                                           TextWrapping="Wrap"/>
                                             </StackPanel>
                                         </Border>
                                     </Grid>
@@ -42,6 +109,7 @@
                             </ListView.ItemTemplate>
                         </ListView>
 
+                        <!-- Caixa de Entrada e Envio -->
                         <Grid Grid.Row="1" ColumnDefinitions="*, 8, Auto">
                             <TextBox Grid.Column="0" 
                                      PlaceholderText="Digite uma mensagem..." 

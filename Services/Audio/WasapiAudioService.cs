@@ -1,15 +1,14 @@
-﻿using Concentus;
-using Concentus.Enums;
-using NAudio.CoreAudioApi;
-using NAudio.Wave;
-using System;
+﻿using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
+using Concentus;
+using Concentus.Enums;
+using NAudio.CoreAudioApi;
+using NAudio.Wave;
 
 #pragma warning disable CS0618
-
 namespace ElosWin.Services.Audio;
 
 public class WasapiAudioService : IAudioService
@@ -121,10 +120,10 @@ public class WasapiAudioService : IAudioService
         for (int i = 0; i < decodedSamples; i++)
         {
             float processed = decodedPcm[i] * effectiveVol;
-            short clamped = (short)Math.Clamp((int)processed, short.MinValue, short.MaxValue);
+            short clamped = (short)Math.Clamp((int)processed, short.MinValue + 1, (int)short.MaxValue);
             decodedPcm[i] = clamped;
 
-            float abs = Math.Abs(clamped);
+            float abs = Math.Abs((int)clamped);
             if (abs > maxSample) maxSample = abs;
         }
 
@@ -197,7 +196,9 @@ public class WasapiAudioService : IAudioService
                 _inputAccumulatorOffset += e.BytesRecorded;
             }
             else
+            {
                 _inputAccumulatorOffset = 0;
+            }
 
             while (_inputAccumulatorOffset >= FrameBytes)
             {
@@ -206,10 +207,14 @@ public class WasapiAudioService : IAudioService
 
                 _inputAccumulatorOffset -= FrameBytes;
                 if (_inputAccumulatorOffset > 0)
+                {
                     Buffer.BlockCopy(_inputAccumulator, FrameBytes, _inputAccumulator, 0, _inputAccumulatorOffset);
+                }
 
                 if (EnableNoiseSuppression)
+                {
                     _noiseFilter.Process(pcmBuffer, FrameSize, true);
+                }
 
                 float inVol = InputVolumeMultiplier;
                 float maxSample = 0f;
@@ -217,10 +222,11 @@ public class WasapiAudioService : IAudioService
                 for (int i = 0; i < pcmBuffer.Length; i++)
                 {
                     float finalSample = pcmBuffer[i] * inVol;
-                    short clamped = (short)Math.Clamp((int)finalSample, short.MinValue, short.MaxValue);
+                    short clamped = (short)Math.Clamp((int)finalSample, short.MinValue + 1, (int)short.MaxValue);
                     pcmBuffer[i] = clamped;
 
-                    float abs = Math.Abs(clamped);
+                    // Uso com cast para int para prevenir qualquer OverflowException em valores negativos mínimos
+                    float abs = Math.Abs((int)clamped);
                     if (abs > maxSample) maxSample = abs;
                 }
 
@@ -233,7 +239,9 @@ public class WasapiAudioService : IAudioService
                 }
 
                 if (IsMuted || IsDeafened)
+                {
                     Array.Clear(pcmBuffer, 0, pcmBuffer.Length);
+                }
 
                 byte[] opusPacket = new byte[1275];
                 int encodedBytes = _encoder.Encode(pcmBuffer, FrameSize, opusPacket, opusPacket.Length);
@@ -248,7 +256,9 @@ public class WasapiAudioService : IAudioService
                     }
                 }
                 else
+                {
                     _onFrameCaptured?.Invoke(opusPacket, encodedBytes);
+                }
             }
         }
     }

@@ -96,6 +96,46 @@
                         <TextBox Header="Minha porta local UDP" Text="{x:Bind ViewModel.LocalPort, Mode=TwoWay}"/>
                     </StackPanel>
                 </Border>
+
+                <!-- Notificações -->
+                <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="8" Padding="20">
+                    <StackPanel Spacing="16">
+                        <TextBlock Text="Notificações" FontSize="15" FontWeight="SemiBold"/>
+
+                        <Grid ColumnDefinitions="*, Auto" VerticalAlignment="Center">
+                            <StackPanel Grid.Column="0" Spacing="2" VerticalAlignment="Center" Margin="0,0,16,0">
+                                <TextBlock Text="Bate-papo" FontSize="13" FontWeight="SemiBold"/>
+                                <TextBlock Text="Exibir notificações na área de trabalho quando receber novas mensagens" 
+                                   FontSize="12" 
+                                   Opacity="0.6" 
+                                   TextWrapping="Wrap"/>
+                            </StackPanel>
+
+                            <ToggleSwitch Grid.Column="1"
+                              IsOn="{x:Bind ViewModel.EnableNotifications, Mode=TwoWay}"
+                              MinWidth="0"
+                              OnContent="{x:Null}"
+                              OffContent="{x:Null}"
+                              HorizontalAlignment="Right"
+                              VerticalAlignment="Center"/>
+                        </Grid>
+                    </StackPanel>
+                </Border>
+
+                <!-- Sobre -->
+                <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="8" Padding="20">
+                    <StackPanel Spacing="12">
+                        <TextBlock Text="Aplicação" FontSize="15" FontWeight="SemiBold"/>
+
+                        <Grid ColumnDefinitions="*, Auto">
+                            <StackPanel Spacing="2">
+                                <TextBlock Text="Elos" FontSize="13" FontWeight="SemiBold"/>
+                                <TextBlock Text="Comunicação por voz peer-to-peer nativa" FontSize="12" Opacity="0.6"/>
+                            </StackPanel>
+                            <TextBlock Grid.Column="1" Text="v0.0.1" FontSize="12" Opacity="0.6" VerticalAlignment="Center"/>
+                        </Grid>
+                    </StackPanel>
+                </Border>
             </StackPanel>
         </Grid>
     </ScrollViewer>

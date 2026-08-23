@@ -1,4 +1,6 @@
-﻿using System;
+﻿using ElosWin.Models;
+using NAudio.Wave;
+using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Drawing2D;
@@ -8,9 +10,6 @@ using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
-using ElosWin.Models;
-using NAudio.CoreAudioApi;
-using NAudio.Wave;
 
 namespace ElosWin.Services.ScreenShare;
 
@@ -39,6 +38,16 @@ public class ScreenCaptureService : IDisposable
     [DllImport("user32.dll")]
     private static extern int GetSystemMetrics(int nIndex);
 
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern int GetWindowLong(IntPtr hWnd, int nIndex);
+
+    [DllImport("dwmapi.dll")]
+    private static extern int DwmGetWindowAttribute(IntPtr hwnd, int dwAttribute, out bool pvAttribute, int cbAttribute);
+
+    private const int GWL_EXSTYLE = -20;
+    private const int WS_EX_TOOLWINDOW = 0x00000080;
+    private const int DWMWA_CLOAKED = 14;
+
     private const int SM_CXSCREEN = 0;
     private const int SM_CYSCREEN = 1;
 
@@ -59,7 +68,7 @@ public class ScreenCaptureService : IDisposable
         {
             new CaptureTargetItem
             {
-                Title = "Tela inteira",
+                Title = "Tela inteira (Monitor principal)",
                 Hwnd = IntPtr.Zero,
                 IsFullScreen = true
             }
@@ -69,17 +78,30 @@ public class ScreenCaptureService : IDisposable
         {
             if (!IsWindowVisible(hWnd)) return true;
 
+            int exStyle = GetWindowLong(hWnd, GWL_EXSTYLE);
+            if ((exStyle & WS_EX_TOOLWINDOW) != 0) return true;
+
+            if (DwmGetWindowAttribute(hWnd, DWMWA_CLOAKED, out bool isCloaked, sizeof(bool)) == 0 && isCloaked)
+                return true;
+
             int length = GetWindowTextLength(hWnd);
             if (length == 0) return true;
 
             var builder = new StringBuilder(length + 1);
             GetWindowText(hWnd, builder, builder.Capacity);
-            string title = builder.ToString();
+            string title = builder.ToString().Trim();
 
-            if (!string.IsNullOrWhiteSpace(title) && title != "Elos" && title != "Program Manager")
+            if (!string.IsNullOrWhiteSpace(title) &&
+                title != "Elos" &&
+                title != "Program Manager" &&
+                title != "Settings" &&
+                title != "Windows Input Experience")
             {
                 GetWindowRect(hWnd, out RECT r);
-                if (r.Right - r.Left > 100 && r.Bottom - r.Top > 100)
+                int width = r.Right - r.Left;
+                int height = r.Bottom - r.Top;
+
+                if (width > 120 && height > 120)
                 {
                     list.Add(new CaptureTargetItem
                     {
@@ -139,7 +161,7 @@ public class ScreenCaptureService : IDisposable
                             }
                             mixedSample /= srcChannels;
 
-                            short s16 = (short)Math.Clamp((int)(mixedSample * 32767f), short.MinValue, short.MaxValue);
+                            short s16 = (short)Math.Clamp((int)(mixedSample * 32767f), short.MinValue + 1, short.MaxValue);
                             pcm16Data[pcmIdx++] = (byte)(s16 & 0xFF);
                             pcm16Data[pcmIdx++] = (byte)((s16 >> 8) & 0xFF);
                         }
@@ -147,7 +169,9 @@ public class ScreenCaptureService : IDisposable
                         onAudioDataReady(pcm16Data, pcm16Data.Length);
                     }
                     else
+                    {
                         onAudioDataReady(a.Buffer, a.BytesRecorded);
+                    }
                 };
 
                 _systemAudioCapture.StartRecording();

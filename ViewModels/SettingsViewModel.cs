@@ -3,9 +3,9 @@ using System.Collections.ObjectModel;
 using System.Linq;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using ElosWin.Services;
 using ElosWin.Services.Audio;
 using ElosWin.Services.Settings;
-using ElosWin.Views;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
 using NAudio.CoreAudioApi;
@@ -53,7 +53,11 @@ public partial class SettingsViewModel : ObservableObject
     [ObservableProperty]
     public partial string TestMicButtonText { get; set; } = "Testar microfone";
 
-    public bool IsNotInCall => !MainWindow.SharedCallVm.IsInCall;
+    public bool IsNotInCall => !AppServices.Discovery.IsInCall;
+
+    [ObservableProperty]
+    public partial bool EnableNotifications { get; set; } = true;
+    partial void OnEnableNotificationsChanged(bool value) => PersistSettings();
 
     public ObservableCollection<MMDevice> AvailableMicrophones { get; } = new();
     public ObservableCollection<MMDevice> AvailableOutputDevices { get; } = new();
@@ -67,8 +71,8 @@ public partial class SettingsViewModel : ObservableObject
     public SettingsViewModel()
     {
         _dispatcherQueue = DispatcherQueue.GetForCurrentThread();
-        _settingsService = new SettingsService();
-        _audioService = MainWindow.SharedCallVm.AudioService;
+        _settingsService = AppServices.Settings;
+        _audioService = AppServices.Audio;
 
         var saved = _settingsService.LoadSettings();
         Username = saved.Username;
@@ -78,10 +82,16 @@ public partial class SettingsViewModel : ObservableObject
         EnableNoiseSuppression = saved.EnableNoiseSuppression;
         NoiseSuppressionLevel = saved.NoiseSuppressionLevel;
         GateSensitivity = saved.GateSensitivity;
+        EnableNotifications = saved.EnableNotifications;
 
         _audioService.OnVoiceLevelChanged += (level) =>
         {
             _dispatcherQueue.TryEnqueue(() => VoiceLevel = Math.Clamp(level * 100.0, 0.0, 100.0));
+        };
+
+        AppServices.Discovery.OnCallStateUpdated += (_) =>
+        {
+            _dispatcherQueue.TryEnqueue(() => OnPropertyChanged(nameof(IsNotInCall)));
         };
 
         LoadDevices(saved.SelectedMicrophoneId, saved.SelectedOutputDeviceId);
@@ -110,7 +120,8 @@ public partial class SettingsViewModel : ObservableObject
             OutputVolume = OutputVolume,
             EnableNoiseSuppression = EnableNoiseSuppression,
             NoiseSuppressionLevel = NoiseSuppressionLevel,
-            GateSensitivity = GateSensitivity
+            GateSensitivity = GateSensitivity,
+            EnableNotifications = EnableNotifications
         });
     }
 

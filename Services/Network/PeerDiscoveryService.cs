@@ -16,7 +16,7 @@ namespace ElosWin.Services.Network;
 public class PeerDiscoveryService : IDisposable
 {
     private const int DiscoveryPort = 5555;
-    private const int PeerTimeoutSeconds = 15;
+    private const int PeerTimeoutSeconds = 6;
 
     private UdpClient? _udpClient;
     private CancellationTokenSource? _cts;
@@ -83,13 +83,17 @@ public class PeerDiscoveryService : IDisposable
             byte[] bytes = Encoding.UTF8.GetBytes(message);
 
             var broadcastTargets = GetBroadcastAddresses();
-            foreach (var target in broadcastTargets)
+
+            for (int r = 0; r < 2; r++)
             {
-                try
+                foreach (var target in broadcastTargets)
                 {
-                    _udpClient.Send(bytes, bytes.Length, new IPEndPoint(target, DiscoveryPort));
+                    try
+                    {
+                        _udpClient.Send(bytes, bytes.Length, new IPEndPoint(target, DiscoveryPort));
+                    }
+                    catch { }
                 }
-                catch { }
             }
         }
         catch { }
@@ -170,7 +174,7 @@ public class PeerDiscoveryService : IDisposable
                     catch { }
                 }
 
-                int delayMs = IsInCall ? 500 : 1000;
+                int delayMs = IsInCall ? 600 : 1200;
                 await Task.Delay(delayMs, token);
             }
             catch (OperationCanceledException)
@@ -241,16 +245,13 @@ public class PeerDiscoveryService : IDisposable
 
                             _activePeers.AddOrUpdate(
                                 peerKey,
-                                _ =>
+                                _ => new PeerInfo
                                 {
-                                    return new PeerInfo
-                                    {
-                                        Username = peerUser,
-                                        IpAddress = peerIp,
-                                        AudioPort = peerAudioPort,
-                                        LastSeen = DateTime.Now,
-                                        State = parsedState
-                                    };
+                                    Username = peerUser,
+                                    IpAddress = peerIp,
+                                    AudioPort = peerAudioPort,
+                                    LastSeen = DateTime.Now,
+                                    State = parsedState
                                 },
                                 (_, existing) =>
                                 {
@@ -304,7 +305,7 @@ public class PeerDiscoveryService : IDisposable
         {
             try
             {
-                await Task.Delay(1500, token);
+                await Task.Delay(1000, token);
 
                 var now = DateTime.Now;
                 var expired = _activePeers
