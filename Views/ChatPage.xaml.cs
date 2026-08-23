@@ -1,6 +1,7 @@
 ﻿using ElosWin.ViewModels;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
+using System.Collections.Specialized;
 
 namespace ElosWin.Views;
 
@@ -12,8 +13,33 @@ public sealed partial class ChatPage : Page
     {
         InitializeComponent();
 
-        Loaded += (s, e) => ViewModel.IsChatPageActive = true;
-        Unloaded += (s, e) => ViewModel.IsChatPageActive = false;
+        Loaded += (s, e) =>
+        {
+            ViewModel.IsChatPageActive = true;
+            ViewModel.ChatMessages.CollectionChanged += ChatMessages_CollectionChanged;
+            ScrollToBottom();
+        };
+
+        Unloaded += (s, e) =>
+        {
+            ViewModel.IsChatPageActive = false;
+            ViewModel.ChatMessages.CollectionChanged -= ChatMessages_CollectionChanged;
+        };
+    }
+
+    private void ChatMessages_CollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
+    {
+        if (e.Action == NotifyCollectionChangedAction.Add)
+            ScrollToBottom();
+    }
+
+    private void ScrollToBottom()
+    {
+        if (ViewModel.ChatMessages.Count > 0)
+        {
+            var lastItem = ViewModel.ChatMessages[^1];
+            MessagesListView.ScrollIntoView(lastItem);
+        }
     }
 
     private void ChatInput_KeyDown(object sender, KeyRoutedEventArgs e)
@@ -22,7 +48,7 @@ public sealed partial class ChatPage : Page
         {
             if (ViewModel.SendMessageCommand.CanExecute(null))
                 ViewModel.SendMessageCommand.Execute(null);
-
+            
             e.Handled = true;
         }
     }

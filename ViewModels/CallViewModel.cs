@@ -50,6 +50,8 @@ public partial class CallViewModel : ObservableObject
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsNotInCall))]
     [NotifyPropertyChangedFor(nameof(CanShowScreenShareFullscreenButton))]
+    [NotifyPropertyChangedFor(nameof(ShowRemoteScreenStream))]
+    [NotifyPropertyChangedFor(nameof(ShowLocalScreenSharingBanner))]
     public partial bool IsInCall { get; set; } = false;
 
     public bool IsNotInCall => !IsInCall;
@@ -83,11 +85,18 @@ public partial class CallViewModel : ObservableObject
     [NotifyPropertyChangedFor(nameof(ScreenShareButtonGlyph))]
     [NotifyPropertyChangedFor(nameof(ScreenShareButtonToolTip))]
     [NotifyPropertyChangedFor(nameof(CanShowScreenShareFullscreenButton))]
+    [NotifyPropertyChangedFor(nameof(ShowRemoteScreenStream))]
+    [NotifyPropertyChangedFor(nameof(ShowLocalScreenSharingBanner))]
     public partial bool IsSharingScreenLocal { get; set; } = false;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanShowScreenShareFullscreenButton))]
+    [NotifyPropertyChangedFor(nameof(ShowRemoteScreenStream))]
+    [NotifyPropertyChangedFor(nameof(ShowLocalScreenSharingBanner))]
     public partial bool HasActiveScreenStream { get; set; } = false;
+
+    public bool ShowRemoteScreenStream => IsInCall && HasActiveScreenStream && !IsSharingScreenLocal;
+    public bool ShowLocalScreenSharingBanner => IsInCall && IsSharingScreenLocal;
 
     [ObservableProperty]
     public partial bool IsScreenShareFullscreen { get; set; } = false;
@@ -443,6 +452,7 @@ public partial class CallViewModel : ObservableObject
             IsInCall = true;
             ParticipantsCount = ConnectedParticipants.Count;
             UpdateCallStatusMessage();
+            CheckScreenStreamPresence();
         }
         catch (Exception ex)
         {
@@ -493,6 +503,9 @@ public partial class CallViewModel : ObservableObject
             HasActiveScreenStream = false;
             RemoteScreenImage = null;
         }
+
+        OnPropertyChanged(nameof(ShowRemoteScreenStream));
+        OnPropertyChanged(nameof(ShowLocalScreenSharingBanner));
     }
 
     private void UpdateCallStatusMessage()

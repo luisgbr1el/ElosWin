@@ -17,15 +17,15 @@
             <RowDefinition Height="*"/>
         </Grid.RowDefinitions>
 
-        <!-- Barra de título -->
-        <Grid x:Name="AppTitleBar" Grid.Row="0" Background="Transparent">
+        <!-- Barra de título do App (Sempre no topo e preservando os botões nativos do Windows) -->
+        <Grid x:Name="AppTitleBar" Grid.Row="0" Background="{ThemeResource SolidBackgroundFillColorBaseBrush}">
             <StackPanel Orientation="Horizontal" Spacing="8" Margin="14,0,0,0" VerticalAlignment="Center">
                 <FontIcon Glyph="&#xE717;" FontSize="13" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"/>
                 <TextBlock Text="Elos" FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center"/>
             </StackPanel>
         </Grid>
 
-        <!-- Menu Lateral -->
+        <!-- Menu Lateral e Conteúdo Principal -->
         <NavigationView 
             x:Name="NavView"
             Grid.Row="1"
@@ -62,50 +62,128 @@
             <Frame x:Name="ContentFrame"/>
         </NavigationView>
 
-        <!-- Overlay Fullscreen para Transmissão de Tela -->
+        <!-- Overlay Fullscreen para Transmissão de Tela (Sem cobrir os botões da janela) -->
         <Grid x:Name="FullscreenOverlay"
-              Grid.Row="0"
-              Grid.RowSpan="2"
-              Background="#1A1A1A"
+              Grid.Row="1"
+              Background="#0F0F0F"
               Visibility="{x:Bind CallVm.IsScreenShareFullscreen, Mode=OneWay}">
 
             <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
                 <RowDefinition Height="*"/>
                 <RowDefinition Height="Auto"/>
             </Grid.RowDefinitions>
 
-            <Border Grid.Row="0" Background="Black" HorizontalAlignment="Stretch" VerticalAlignment="Stretch">
+            <!-- Barra Superior da Transmissão (Status e Apresentador) -->
+            <Border Grid.Row="0" 
+                    Background="#1E1E1E" 
+                    BorderBrush="#2E2E2E" 
+                    BorderThickness="0,0,0,1" 
+                    Padding="18,10">
+                <Grid ColumnDefinitions="Auto, *, Auto">
+                    <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                        <FontIcon Glyph="&#xE7F4;" FontSize="14" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"/>
+                        <TextBlock Text="{x:Bind CallVm.ScreenStreamPresenterText, Mode=OneWay}" 
+                                   FontWeight="SemiBold" 
+                                   FontSize="13" 
+                                   Foreground="#F3F3F3"/>
+                    </StackPanel>
+
+                    <Border Grid.Column="2" 
+                            Background="#2A2A2A" 
+                            BorderBrush="#3D3D3D" 
+                            BorderThickness="1" 
+                            CornerRadius="4" 
+                            Padding="8,3">
+                        <TextBlock Text="AO VIVO" FontSize="10" FontWeight="Bold" Foreground="#22C55E"/>
+                    </Border>
+                </Grid>
+            </Border>
+
+            <!-- Área da Imagem de Transmissão -->
+            <Border Grid.Row="1" Background="Black" HorizontalAlignment="Stretch" VerticalAlignment="Stretch">
                 <Image Source="{x:Bind CallVm.RemoteScreenImage, Mode=OneWay}" Stretch="Uniform"/>
             </Border>
 
-            <Border Grid.Row="1" Background="#2A2A2A" BorderThickness="0,1,0,0" BorderBrush="#404040" Padding="20">
-                <Grid ColumnDefinitions="Auto, Auto, Auto, Auto, Auto, *, Auto">
-                    <StackPanel Orientation="Vertical" Spacing="3" VerticalAlignment="Center" Width="180">
-                        <TextBlock Text="Volume" FontSize="12" Opacity="0.8" HorizontalAlignment="Left"/>
-                        <Grid ColumnDefinitions="*, Auto" VerticalAlignment="Center">
-                            <Slider Grid.Column="0" Value="{x:Bind CallVm.StreamVolume, Mode=TwoWay}" Minimum="0" Maximum="200" StepFrequency="1" HorizontalAlignment="Stretch" Margin="0,0,8,0" VerticalAlignment="Center"/>
-                            <TextBlock Grid.Column="1" Text="{x:Bind CallVm.StreamVolumeText, Mode=OneWay}" FontSize="11" Foreground="#A8A8A8" HorizontalAlignment="Right" TextAlignment="Right" Width="36" VerticalAlignment="Center"/>
-                        </Grid>
+            <!-- Barra Inferior Redesenhada (Controles da chamada e áudio) -->
+            <Border Grid.Row="2" 
+                    Background="#181818" 
+                    BorderBrush="#2E2E2E" 
+                    BorderThickness="0,1,0,0" 
+                    Padding="20,12">
+                <Grid ColumnDefinitions="Auto, Auto, *, Auto">
+                    <!-- Controle de Volume -->
+                    <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                        <FontIcon Glyph="&#xE767;" FontSize="14" Foreground="#A8A8A8" VerticalAlignment="Center"/>
+                        <Slider Value="{x:Bind CallVm.StreamVolume, Mode=TwoWay}" 
+                                Minimum="0" 
+                                Maximum="200" 
+                                StepFrequency="1" 
+                                Width="140" 
+                                VerticalAlignment="Center"/>
+                        <TextBlock Text="{x:Bind CallVm.StreamVolumeText, Mode=OneWay}" 
+                                   FontSize="12" 
+                                   Foreground="#A8A8A8" 
+                                   Width="38" 
+                                   VerticalAlignment="Center"/>
                     </StackPanel>
 
-                    <Border Grid.Column="1" Width="1" Margin="12,0" Background="#404040"/>
+                    <!-- Separador -->
+                    <Border Grid.Column="1" Width="1" Height="24" Background="#333333" Margin="18,0"/>
 
-                    <Button Grid.Column="2" Command="{x:Bind CallVm.ToggleMuteCommand}" Background="Transparent" BorderThickness="0" Padding="12,8" VerticalAlignment="Center" ToolTipService.ToolTip="{x:Bind CallVm.MuteToolTip, Mode=OneWay}">
-                        <FontIcon Glyph="{x:Bind CallVm.MuteGlyph, Mode=OneWay}" FontSize="14" Foreground="#E8E8E8"/>
-                    </Button>
+                    <!-- Botões Centrais de Voz e Ação -->
+                    <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="10" HorizontalAlignment="Center">
+                        <!-- Mutar Microfone -->
+                        <Button Command="{x:Bind CallVm.ToggleMuteCommand}" 
+                                IsEnabled="{x:Bind CallVm.CanToggleMute, Mode=OneWay}" 
+                                Background="#2A2A2A" 
+                                BorderThickness="1" 
+                                BorderBrush="#3A3A3A" 
+                                Width="44" 
+                                Height="38" 
+                                CornerRadius="6" 
+                                ToolTipService.ToolTip="{x:Bind CallVm.MuteToolTip, Mode=OneWay}">
+                            <FontIcon Glyph="{x:Bind CallVm.MuteGlyph, Mode=OneWay}" FontSize="15" Foreground="White"/>
+                        </Button>
 
-                    <Button Grid.Column="3" Command="{x:Bind CallVm.ToggleDeafenCommand}" Background="Transparent" BorderThickness="0" Padding="12,8" VerticalAlignment="Center" ToolTipService.ToolTip="{x:Bind CallVm.DeafenToolTip, Mode=OneWay}">
-                        <FontIcon Glyph="{x:Bind CallVm.DeafenGlyph, Mode=OneWay}" FontSize="14" Foreground="#E8E8E8"/>
-                    </Button>
+                        <!-- Desativar Áudio Geral -->
+                        <Button Command="{x:Bind CallVm.ToggleDeafenCommand}" 
+                                Background="#2A2A2A" 
+                                BorderThickness="1" 
+                                BorderBrush="#3A3A3A" 
+                                Width="44" 
+                                Height="38" 
+                                CornerRadius="6" 
+                                ToolTipService.ToolTip="{x:Bind CallVm.DeafenToolTip, Mode=OneWay}">
+                            <FontIcon Glyph="{x:Bind CallVm.DeafenGlyph, Mode=OneWay}" FontSize="15" Foreground="White"/>
+                        </Button>
 
-                    <Button Grid.Column="4" Command="{x:Bind CallVm.LeaveCallCommand}" Background="#DC2626" BorderThickness="0" Padding="12,8" VerticalAlignment="Center" ToolTipService.ToolTip="Sair da chamada">
-                        <FontIcon Glyph="&#xE778;" FontSize="14" Foreground="White"/>
-                    </Button>
+                        <!-- Sair da Chamada -->
+                        <Button Command="{x:Bind CallVm.LeaveCallCommand}" 
+                                Background="#E11D48" 
+                                BorderThickness="0" 
+                                Width="44" 
+                                Height="38" 
+                                CornerRadius="6" 
+                                ToolTipService.ToolTip="Sair da chamada">
+                            <FontIcon Glyph="&#xE778;" FontSize="15" Foreground="White"/>
+                        </Button>
+                    </StackPanel>
 
-                    <Border Grid.Column="5"/>
-
-                    <Button Grid.Column="6" Command="{x:Bind CallVm.ToggleScreenShareFullscreenCommand}" Background="Transparent" BorderThickness="0" Padding="12,8" VerticalAlignment="Center" ToolTipService.ToolTip="Sair da tela cheia">
-                        <FontIcon Glyph="&#xE73F;" FontSize="14" Foreground="#E8E8E8"/>
+                    <!-- Sair da Tela Cheia -->
+                    <Button Grid.Column="3" 
+                            Command="{x:Bind CallVm.ToggleScreenShareFullscreenCommand}" 
+                            Background="#2A2A2A" 
+                            BorderThickness="1" 
+                            BorderBrush="#3A3A3A" 
+                            Height="38" 
+                            Padding="14,0" 
+                            CornerRadius="6" 
+                            ToolTipService.ToolTip="Sair da tela cheia">
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <FontIcon Glyph="&#xE73F;" FontSize="13" Foreground="White"/>
+                            <TextBlock Text="Sair da tela cheia" FontSize="12" Foreground="White" VerticalAlignment="Center"/>
+                        </StackPanel>
                     </Button>
                 </Grid>
             </Border>

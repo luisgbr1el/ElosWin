@@ -4,133 +4,138 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:models="using:ElosWin.Models">
 
-    <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
-        <Grid Padding="36,20,36,36">
-            <StackPanel Spacing="24" HorizontalAlignment="Stretch" MaxWidth="900">
-                <!-- Cabeçalho -->
-                <Grid ColumnDefinitions="*, Auto">
-                    <StackPanel Spacing="4">
-                        <TextBlock Text="Bate-papo" FontSize="26" FontWeight="Bold"/>
-                        <TextBlock Text="Troque mensagens com todos na rede local" FontSize="13" Opacity="0.6"/>
-                    </StackPanel>
-
-                    <Border Grid.Column="1" 
-                            Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" 
-                            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" 
-                            BorderThickness="1" 
-                            CornerRadius="20" 
-                            Padding="14,6" 
-                            VerticalAlignment="Center">
-                        <TextBlock Text="{x:Bind ViewModel.ChatStatusText, Mode=OneWay}" 
-                                   FontSize="12" 
-                                   FontWeight="SemiBold" 
-                                   Opacity="0.9" 
-                                   VerticalAlignment="Center"/>
-                    </Border>
-                </Grid>
-
-                <!-- Área de Mensagens e Envio -->
-                <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" 
-                        BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" 
-                        BorderThickness="1" 
-                        CornerRadius="8" 
-                        Padding="20">
-                    <Grid RowDefinitions="*, Auto" MinHeight="480">
-                        <!-- Estado Vazio -->
-                        <TextBlock Grid.Row="0" 
-                                   Text="Nenhuma mensagem. Diga oi!" 
-                                   FontSize="13" 
-                                   Opacity="0.5" 
-                                   HorizontalAlignment="Center" 
-                                   VerticalAlignment="Center" 
-                                   Visibility="{x:Bind ViewModel.NoChatMessages, Mode=OneWay}"/>
-
-                        <!-- Histórico de Mensagens -->
-                        <ListView Grid.Row="0" 
-                                  ItemsSource="{x:Bind ViewModel.ChatMessages}" 
-                                  Visibility="{x:Bind ViewModel.HasChatMessages, Mode=OneWay}" 
-                                  SelectionMode="None" 
-                                  Margin="0,0,0,16">
-                            <ListView.ItemTemplate>
-                                <DataTemplate x:DataType="models:ChatMessage">
-                                    <Grid Margin="0,5" HorizontalAlignment="{x:Bind Alignment}">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="Auto"/>
-                                            <ColumnDefinition Width="*"/>
-                                        </Grid.ColumnDefinitions>
-
-                                        <!-- Ícone do Participante (mesmo padrão da lista de chamada) -->
-                                        <Border Grid.Column="0"
-                                                Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
-                                                BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
-                                                BorderThickness="1"
-                                                CornerRadius="16"
-                                                Width="32"
-                                                Height="32"
-                                                Margin="0,0,8,0"
-                                                VerticalAlignment="Bottom"
-                                                Visibility="{x:Bind models:ChatMessage.GetAvatarVisibility(IsFromSelf), Mode=OneWay}">
-                                            <FontIcon Glyph="&#xE77B;" FontSize="13" Foreground="{ThemeResource TextFillColorSecondaryBrush}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                        </Border>
-
-                                        <!-- Balão da Mensagem -->
-                                        <Border Grid.Column="1"
-                                                Background="{x:Bind BubbleBackgroundBrush}" 
-                                                BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" 
-                                                BorderThickness="1" 
-                                                CornerRadius="10" 
-                                                Padding="12,8" 
-                                                MaxWidth="540">
-                                            <StackPanel Spacing="3">
-                                                <!-- Remetente e Horário -->
-                                                <Grid ColumnDefinitions="*, Auto">
-                                                    <TextBlock Text="{x:Bind SenderName}" 
-                                                               FontSize="12" 
-                                                               FontWeight="Bold" 
-                                                               Margin="0,0,14,0" 
-                                                               Foreground="{ThemeResource TextFillColorPrimaryBrush}"/>
-                                                    <TextBlock Grid.Column="1" 
-                                                               Text="{x:Bind TimestampText}" 
-                                                               FontSize="10" 
-                                                               Opacity="0.5" 
-                                                               Foreground="{ThemeResource TextFillColorSecondaryBrush}" 
-                                                               VerticalAlignment="Center"/>
-                                                </Grid>
-
-                                                <!-- Conteúdo do Texto -->
-                                                <TextBlock Text="{x:Bind Content}" 
-                                                           FontSize="13" 
-                                                           Foreground="{ThemeResource TextFillColorPrimaryBrush}" 
-                                                           TextWrapping="Wrap"/>
-                                            </StackPanel>
-                                        </Border>
-                                    </Grid>
-                                </DataTemplate>
-                            </ListView.ItemTemplate>
-                        </ListView>
-
-                        <!-- Caixa de Entrada e Envio -->
-                        <Grid Grid.Row="1" ColumnDefinitions="*, 8, Auto">
-                            <TextBox Grid.Column="0" 
-                                     PlaceholderText="Digite uma mensagem..." 
-                                     Text="{x:Bind ViewModel.ChatInputMessage, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" 
-                                     KeyDown="ChatInput_KeyDown"
-                                     HorizontalAlignment="Stretch" 
-                                     Height="40" 
-                                     CornerRadius="6"/>
-                            <Button Grid.Column="2" 
-                                    Command="{x:Bind ViewModel.SendMessageCommand}" 
-                                    Style="{ThemeResource AccentButtonStyle}" 
-                                    Height="40" 
-                                    Width="46" 
-                                    CornerRadius="6" 
-                                    ToolTipService.ToolTip="Enviar mensagem">
-                                <FontIcon Glyph="&#xE724;" FontSize="14" Foreground="White"/>
-                            </Button>
-                        </Grid>
-                    </Grid>
-                </Border>
+    <Grid Padding="36,20,36,24" RowDefinitions="Auto, *, Auto">
+        <!-- Cabeçalho Fixo Superior -->
+        <Grid Grid.Row="0" ColumnDefinitions="*, Auto" Margin="0,0,0,16">
+            <StackPanel Spacing="4">
+                <TextBlock Text="Bate-papo" FontSize="26" FontWeight="Bold"/>
+                <TextBlock Text="Troque mensagens com todos na rede local" FontSize="13" Opacity="0.6"/>
             </StackPanel>
+
+            <Border Grid.Column="1" 
+                    Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" 
+                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" 
+                    BorderThickness="1" 
+                    CornerRadius="20" 
+                    Padding="14,6" 
+                    VerticalAlignment="Center">
+                <TextBlock Text="{x:Bind ViewModel.ChatStatusText, Mode=OneWay}" 
+                           FontSize="12" 
+                           FontWeight="SemiBold" 
+                           Opacity="0.9" 
+                           VerticalAlignment="Center"/>
+            </Border>
         </Grid>
-    </ScrollViewer>
+
+        <!-- Área de Mensagens (Ocupa o espaço central) -->
+        <Border Grid.Row="1" 
+                Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" 
+                BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" 
+                BorderThickness="1" 
+                CornerRadius="8" 
+                Padding="16"
+                Margin="0,0,0,16">
+            <Grid>
+                <!-- Estado Vazio -->
+                <TextBlock Text="Nenhuma mensagem. Diga oi!" 
+                           FontSize="13" 
+                           Opacity="0.5" 
+                           HorizontalAlignment="Center" 
+                           VerticalAlignment="Center" 
+                           Visibility="{x:Bind ViewModel.NoChatMessages, Mode=OneWay}"/>
+
+                <!-- Histórico de Mensagens com Auto-Scroll -->
+                <ListView x:Name="MessagesListView"
+                          ItemsSource="{x:Bind ViewModel.ChatMessages}" 
+                          Visibility="{x:Bind ViewModel.HasChatMessages, Mode=OneWay}" 
+                          SelectionMode="None" 
+                          ScrollViewer.VerticalScrollBarVisibility="Auto"
+                          ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                    <ListView.ItemTemplate>
+                        <DataTemplate x:DataType="models:ChatMessage">
+                            <Grid Margin="0,4" HorizontalAlignment="{x:Bind Alignment}">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+
+                                <!-- Ícone do Participante -->
+                                <Border Grid.Column="0"
+                                        Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                                        BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                                        BorderThickness="1"
+                                        CornerRadius="16"
+                                        Width="32"
+                                        Height="32"
+                                        Margin="0,0,8,0"
+                                        VerticalAlignment="Bottom"
+                                        Visibility="{x:Bind models:ChatMessage.GetAvatarVisibility(IsFromSelf), Mode=OneWay}">
+                                    <FontIcon Glyph="&#xE77B;" FontSize="13" Foreground="{ThemeResource TextFillColorSecondaryBrush}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                </Border>
+
+                                <!-- Balão da Mensagem -->
+                                <Border Grid.Column="1"
+                                        Background="{x:Bind BubbleBackgroundBrush}" 
+                                        BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" 
+                                        BorderThickness="1" 
+                                        CornerRadius="10" 
+                                        Padding="12,8" 
+                                        MaxWidth="540">
+                                    <StackPanel Spacing="3">
+                                        <!-- Remetente e Horário -->
+                                        <Grid ColumnDefinitions="*, Auto">
+                                            <TextBlock Text="{x:Bind SenderName}" 
+                                                       FontSize="12" 
+                                                       FontWeight="Bold" 
+                                                       Margin="0,0,14,0" 
+                                                       Foreground="{ThemeResource TextFillColorPrimaryBrush}"/>
+                                            <TextBlock Grid.Column="1" 
+                                                       Text="{x:Bind TimestampText}" 
+                                                       FontSize="10" 
+                                                       Opacity="0.5" 
+                                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}" 
+                                                       VerticalAlignment="Center"/>
+                                        </Grid>
+
+                                        <!-- Conteúdo do Texto -->
+                                        <TextBlock Text="{x:Bind Content}" 
+                                                   FontSize="13" 
+                                                   Foreground="{ThemeResource TextFillColorPrimaryBrush}" 
+                                                   TextWrapping="Wrap"/>
+                                    </StackPanel>
+                                </Border>
+                            </Grid>
+                        </DataTemplate>
+                    </ListView.ItemTemplate>
+                </ListView>
+            </Grid>
+        </Border>
+
+        <!-- Barra de Entrada e Envio Fixa Inferior -->
+        <Border Grid.Row="2"
+                Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" 
+                BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" 
+                BorderThickness="1" 
+                CornerRadius="8" 
+                Padding="12">
+            <Grid ColumnDefinitions="*, 8, Auto">
+                <TextBox Grid.Column="0" 
+                         PlaceholderText="Digite uma mensagem..." 
+                         Text="{x:Bind ViewModel.ChatInputMessage, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" 
+                         KeyDown="ChatInput_KeyDown"
+                         HorizontalAlignment="Stretch" 
+                         Height="42" 
+                         CornerRadius="6"/>
+                <Button Grid.Column="2" 
+                        Command="{x:Bind ViewModel.SendMessageCommand}" 
+                        Style="{ThemeResource AccentButtonStyle}" 
+                        Height="42" 
+                        Width="48" 
+                        CornerRadius="6" 
+                        ToolTipService.ToolTip="Enviar mensagem">
+                    <FontIcon Glyph="&#xE724;" FontSize="14" Foreground="White"/>
+                </Button>
+            </Grid>
+        </Border>
+    </Grid>
 </Page>

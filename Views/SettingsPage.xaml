@@ -6,7 +6,7 @@
 
     <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
         <Grid Padding="36,20,36,36">
-            <StackPanel Spacing="24" HorizontalAlignment="Stretch" MaxWidth="900">
+            <StackPanel Spacing="24" HorizontalAlignment="Stretch">
                 <StackPanel Spacing="4">
                     <TextBlock Text="Configurações" FontSize="26" FontWeight="Bold"/>
                     <TextBlock Text="Ajuste suas opções de voz, microfone e portas de rede" FontSize="13" Opacity="0.6"/>
@@ -55,8 +55,25 @@
                             </Grid>
                         </StackPanel>
 
-                        <StackPanel Spacing="10">
-                            <ToggleSwitch Header="Supressão de ruído" IsOn="{x:Bind ViewModel.EnableNoiseSuppression, Mode=TwoWay}" OnContent="Ativada" OffContent="Desativada"/>
+                        <StackPanel Spacing="12">
+                            <Grid ColumnDefinitions="*, Auto" VerticalAlignment="Center">
+                                <StackPanel Grid.Column="0" Spacing="2" VerticalAlignment="Center" Margin="0,0,16,0">
+                                    <TextBlock Text="Supressão de ruído" FontSize="13" FontWeight="SemiBold"/>
+                                    <TextBlock Text="Filtra ruídos de fundo e sons indesejados do microfone via IA" 
+                                               FontSize="12" 
+                                               Opacity="0.6" 
+                                               TextWrapping="Wrap"/>
+                                </StackPanel>
+
+                                <ToggleSwitch Grid.Column="1"
+                                              IsOn="{x:Bind ViewModel.EnableNoiseSuppression, Mode=TwoWay}"
+                                              MinWidth="0"
+                                              OnContent="{x:Null}"
+                                              OffContent="{x:Null}"
+                                              HorizontalAlignment="Right"
+                                              VerticalAlignment="Center"/>
+                            </Grid>
+
                             <StackPanel Spacing="8" Margin="0,4,0,0">
                                 <Grid ColumnDefinitions="Auto, *">
                                     <TextBlock Text="Sensibilidade do microfone:" FontSize="12" Opacity="0.8" VerticalAlignment="Center" Margin="0,0,12,0"/>
@@ -106,18 +123,18 @@
                             <StackPanel Grid.Column="0" Spacing="2" VerticalAlignment="Center" Margin="0,0,16,0">
                                 <TextBlock Text="Bate-papo" FontSize="13" FontWeight="SemiBold"/>
                                 <TextBlock Text="Exibir notificações na área de trabalho quando receber novas mensagens" 
-                                   FontSize="12" 
-                                   Opacity="0.6" 
-                                   TextWrapping="Wrap"/>
+                                           FontSize="12" 
+                                           Opacity="0.6" 
+                                           TextWrapping="Wrap"/>
                             </StackPanel>
 
                             <ToggleSwitch Grid.Column="1"
-                              IsOn="{x:Bind ViewModel.EnableNotifications, Mode=TwoWay}"
-                              MinWidth="0"
-                              OnContent="{x:Null}"
-                              OffContent="{x:Null}"
-                              HorizontalAlignment="Right"
-                              VerticalAlignment="Center"/>
+                                          IsOn="{x:Bind ViewModel.EnableNotifications, Mode=TwoWay}"
+                                          MinWidth="0"
+                                          OnContent="{x:Null}"
+                                          OffContent="{x:Null}"
+                                          HorizontalAlignment="Right"
+                                          VerticalAlignment="Center"/>
                         </Grid>
                     </StackPanel>
                 </Border>
