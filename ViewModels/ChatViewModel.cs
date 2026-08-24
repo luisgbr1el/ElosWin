@@ -8,6 +8,7 @@ using Microsoft.Win32;
 using System;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
+using System.IO;
 using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 using Windows.Data.Xml.Dom;
@@ -96,10 +97,14 @@ public partial class ChatViewModel : ObservableObject
             string safeTitle = System.Security.SecurityElement.Escape(title);
             string safeContent = System.Security.SecurityElement.Escape(content);
 
+            string iconPath = Path.Combine(AppContext.BaseDirectory, "Assets", "AppIcon.ico");
+            string iconUri = new Uri(iconPath).AbsoluteUri;
+
             string toastXml = $@"
             <toast>
                 <visual>
                     <binding template='ToastGeneric'>
+                        <image placement='appLogoOverride' hint-crop='circle' src='{iconUri}'/>
                         <text>{safeTitle}</text>
                         <text>{safeContent}</text>
                     </binding>

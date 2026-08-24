@@ -1,5 +1,5 @@
 #define MyAppName "Elos"
-#define MyAppVersion "1.0.0"
+#define MyAppVersion "1.0.1"
 #define MyAppPublisher "Luis Gabriel"
 #define MyAppURL "https://github.com/luisgbr1el/ElosWin"
 #define MyAppExeName "ElosWin.exe"
