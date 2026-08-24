@@ -1,9 +1,10 @@
-using System;
 using ElosWin.ViewModels;
 using Microsoft.UI;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using System;
+using System.Threading.Tasks;
 using WinRT.Interop;
 
 namespace ElosWin.Views;
@@ -32,6 +33,46 @@ public sealed partial class MainWindow : Window
         _ = SharedSettingsVm;
         _ = SharedCallVm;
         _ = SharedChatVm;
+
+        CheckForStartupUpdates();
+    }
+
+    private void CheckForStartupUpdates()
+    {
+        Task.Run(async () =>
+        {
+            await Task.Delay(2000);
+
+            DispatcherQueue.TryEnqueue(async () =>
+            {
+                try
+                {
+                    var updateService = Services.AppServices.Updater;
+                    var updateInfo = await updateService.CheckForUpdatesAsync();
+
+                    if (updateInfo.IsUpdateAvailable && Content?.XamlRoot != null)
+                    {
+                        var dialog = new ContentDialog
+                        {
+                            Title = "Nova atualização disponível!",
+                            Content = $"Uma nova versão ({updateInfo.LatestVersion}) do Elos está disponível para instalação.\n\nNotas da versão:\n{updateInfo.ReleaseNotes}",
+                            PrimaryButtonText = "Atualizar",
+                            CloseButtonText = "Cancelar",
+                            DefaultButton = ContentDialogButton.Primary,
+                            XamlRoot = Content.XamlRoot
+                        };
+
+                        var result = await dialog.ShowAsync();
+                        
+                        if (result == ContentDialogResult.Primary)
+                            await updateService.DownloadAndInstallUpdateAsync(updateInfo.DownloadUrl);
+                    }
+                }
+                catch
+                {
+                }
+            });
+        });
     }
 
     private void ConfigureCustomTitleBar()

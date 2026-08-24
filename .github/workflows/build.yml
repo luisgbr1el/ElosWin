@@ -34,15 +34,22 @@ jobs:
         -p:PublishSingleFile=false
         -o ./publish
 
-    - name: Compactar em ZIP
+    - name: Compilar Instalador com Inno Setup
+      uses: Kevin-De-Koninck/Build-InnoSetup@v2
+      with:
+        projectFilePath: 'installer.iss'
+
+    - name: Compactar versão portátil (ZIP opcional)
       shell: pwsh
       run: |
-        Compress-Archive -Path ./publish/* -DestinationPath ./Elos-win-x64.zip
+        Compress-Archive -Path ./publish/* -DestinationPath ./Elos-Portable-win-x64.zip
 
-    - name: Anexar ZIP na Release
+    - name: Anexar Instalador e ZIP na Release
       uses: softprops/action-gh-release@v2
       with:
         tag_name: ${{ github.event.release.tag_name || 'latest' }}
-        files: ./Elos-win-x64.zip
+        files: |
+          Output/ElosSetup-x64.exe
+          Elos-Portable-win-x64.zip
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -1,14 +1,17 @@
-﻿using System;
-using System.Collections.ObjectModel;
-using System.Linq;
-using CommunityToolkit.Mvvm.ComponentModel;
+﻿using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using ElosWin.Models;
 using ElosWin.Services;
 using ElosWin.Services.Audio;
 using ElosWin.Services.Settings;
+using ElosWin.Services.Update;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
 using NAudio.CoreAudioApi;
+using System;
+using System.Collections.ObjectModel;
+using System.Linq;
+using System.Threading.Tasks;
 
 namespace ElosWin.ViewModels;
 
@@ -16,6 +19,7 @@ public partial class SettingsViewModel : ObservableObject
 {
     private readonly SettingsService _settingsService;
     private readonly IAudioService _audioService;
+    private readonly UpdateService _updateService;
     private readonly DispatcherQueue _dispatcherQueue;
 
     [ObservableProperty]
@@ -53,6 +57,15 @@ public partial class SettingsViewModel : ObservableObject
     [ObservableProperty]
     public partial string TestMicButtonText { get; set; } = "Testar microfone";
 
+    [ObservableProperty]
+    public partial string CheckForUpdatesButtonText { get; set; } = "Verificar atualizações";
+
+    [ObservableProperty]
+    public partial bool IsCheckingUpdates { get; set; } = false;
+
+    [ObservableProperty]
+    public partial string AppVersionText { get; set; } = "v0.0.1";
+
     public bool IsNotInCall => !AppServices.Discovery.IsInCall;
 
     [ObservableProperty]
@@ -68,11 +81,18 @@ public partial class SettingsViewModel : ObservableObject
     [ObservableProperty]
     public partial MMDevice? SelectedOutputDevice { get; set; }
 
+    public event Action<UpdateInfo>? OnUpdateAvailable;
+    public event Action? OnNoUpdateFound;
+    public event Action? OnUpdateCheckFailed;
+
     public SettingsViewModel()
     {
         _dispatcherQueue = DispatcherQueue.GetForCurrentThread();
         _settingsService = AppServices.Settings;
         _audioService = AppServices.Audio;
+        _updateService = AppServices.Updater;
+
+        AppVersionText = $"v{_updateService.CurrentVersion}";
 
         var saved = _settingsService.LoadSettings();
         Username = saved.Username;
@@ -149,5 +169,55 @@ public partial class SettingsViewModel : ObservableObject
             TestMicButtonText = "Testar microfone";
             VoiceLevel = 0;
         }
+    }
+
+    [RelayCommand]
+    public async Task CheckForUpdatesAsync()
+    {
+        await PerformUpdateCheckAsync(isSilent: false);
+    }
+
+    public async Task CheckForUpdatesSilentlyAsync()
+    {
+        await PerformUpdateCheckAsync(isSilent: true);
+    }
+
+    private async Task PerformUpdateCheckAsync(bool isSilent)
+    {
+        if (IsCheckingUpdates) return;
+
+        IsCheckingUpdates = true;
+
+        try
+        {
+            var updateInfo = await _updateService.CheckForUpdatesAsync();
+
+            _dispatcherQueue.TryEnqueue(() =>
+            {
+                if (updateInfo.IsUpdateAvailable)
+                    OnUpdateAvailable?.Invoke(updateInfo);
+                else if (!isSilent)
+                    OnNoUpdateFound?.Invoke();
+            });
+        }
+        catch
+        {
+            if (!isSilent)
+            {
+                _dispatcherQueue.TryEnqueue(() =>
+                {
+                    OnUpdateCheckFailed?.Invoke();
+                });
+            }
+        }
+        finally
+        {
+            _dispatcherQueue.TryEnqueue(() => IsCheckingUpdates = false);
+        }
+    }
+
+    public async Task StartUpdateInstallationAsync(string downloadUrl, IProgress<double>? progress = null)
+    {
+        await _updateService.DownloadAndInstallUpdateAsync(downloadUrl, progress);
     }
 }

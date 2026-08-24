@@ -17,6 +17,7 @@
     <Nullable>enable</Nullable>
     <LangVersion>latest</LangVersion>
     <DefineConstants>$(DefineConstants);DISABLE_XAML_GENERATED_MAIN</DefineConstants>
+	<ApplicationIcon>Assets\AppIcon.ico</ApplicationIcon>
   </PropertyGroup>
   <ItemGroup>
     <None Remove="Views\CallPage.xaml" />
