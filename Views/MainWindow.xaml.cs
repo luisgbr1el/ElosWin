@@ -4,6 +4,7 @@ using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using System;
+using System.IO;
 using System.Threading.Tasks;
 using WinRT.Interop;
 
@@ -63,12 +64,12 @@ public sealed partial class MainWindow : Window
                         };
 
                         var result = await dialog.ShowAsync();
-                        
+
                         if (result == ContentDialogResult.Primary)
                             await updateService.DownloadAndInstallUpdateAsync(updateInfo.DownloadUrl);
                     }
                 }
-                catch
+                catch 
                 {
                 }
             });
@@ -81,16 +82,24 @@ public sealed partial class MainWindow : Window
         WindowId wndId = Win32Interop.GetWindowIdFromWindow(hWnd);
         _appWindow = AppWindow.GetFromWindowId(wndId);
 
-        if (_appWindow != null && AppWindowTitleBar.IsCustomizationSupported())
+        if (_appWindow != null)
         {
-            var titleBar = _appWindow.TitleBar;
-            titleBar.ExtendsContentIntoTitleBar = true;
-            titleBar.ButtonBackgroundColor = Colors.Transparent;
-            titleBar.ButtonInactiveBackgroundColor = Colors.Transparent;
-            titleBar.ButtonHoverBackgroundColor = ColorHelper.FromArgb(20, 255, 255, 255);
-            titleBar.ButtonPressedBackgroundColor = ColorHelper.FromArgb(40, 255, 255, 255);
+            string iconPath = Path.Combine(AppContext.BaseDirectory, "Assets", "AppIcon.ico");
 
-            AppTitleBar.Loaded += (s, e) => SetTitleBar(AppTitleBar);
+            if (File.Exists(iconPath))
+                _appWindow.SetIcon(iconPath);
+
+            if (AppWindowTitleBar.IsCustomizationSupported())
+            {
+                var titleBar = _appWindow.TitleBar;
+                titleBar.ExtendsContentIntoTitleBar = true;
+                titleBar.ButtonBackgroundColor = Colors.Transparent;
+                titleBar.ButtonInactiveBackgroundColor = Colors.Transparent;
+                titleBar.ButtonHoverBackgroundColor = ColorHelper.FromArgb(20, 255, 255, 255);
+                titleBar.ButtonPressedBackgroundColor = ColorHelper.FromArgb(40, 255, 255, 255);
+
+                AppTitleBar.Loaded += (s, e) => SetTitleBar(AppTitleBar);
+            }
         }
     }
 
