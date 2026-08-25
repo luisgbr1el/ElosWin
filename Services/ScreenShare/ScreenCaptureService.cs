@@ -95,7 +95,8 @@ public class ScreenCaptureService : IDisposable
                 title != "Elos" &&
                 title != "Program Manager" &&
                 title != "Settings" &&
-                title != "Windows Input Experience")
+                title != "Windows Input Experience" &&
+                title != "Experiência de Entrada do Windows")
             {
                 GetWindowRect(hWnd, out RECT r);
                 int width = r.Right - r.Left;
@@ -135,6 +136,7 @@ public class ScreenCaptureService : IDisposable
             try
             {
                 _systemAudioCapture = new WasapiLoopbackCapture();
+
                 var waveFormat = _systemAudioCapture.WaveFormat;
                 bool isFloat = waveFormat.Encoding == WaveFormatEncoding.IeeeFloat || waveFormat.BitsPerSample == 32;
                 int srcChannels = Math.Max(1, waveFormat.Channels);
